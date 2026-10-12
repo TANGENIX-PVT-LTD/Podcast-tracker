@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<journey name="Tablet player and learning tools v1.0.2">
+  <description>Use the local demo workspace to verify browsing, dedicated playback, learning tools, immersive fullscreen and return navigation without touching a real account.</description>
+  <actions>
+    <action>Open the preview tablet workspace</action>
+    <action>Open Library and select the Build Better Habits with Systems episode</action>
+    <action>Verify the player has no Today dashboard or browsing sidebar and shows Summary Notes Quirky</action>
+    <action>Open Notes and verify the editable notes field is visible</action>
+    <action>Open Quirky and verify the question field is visible</action>
+    <action>Hide learning tools and verify the panel disappears</action>
+    <action>Enter full screen and verify the exit control and absence of episode actions</action>
+    <action>Press Back and verify fullscreen exits to the player</action>
+    <action>Show learning tools and open Summary</action>
+    <action>Return to Library and open Progress without a crash</action>
+  </actions>
+</journey>

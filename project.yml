@@ -37,7 +37,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio
         PRODUCT_NAME: PodTrackio
         PRODUCT_MODULE_NAME: PodcastTracker
-        DEVELOPMENT_TEAM: 4MV5J2X948
+        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         MARKETING_VERSION: 1.0
         CURRENT_PROJECT_VERSION: 1
@@ -63,7 +63,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio.tests
-        DEVELOPMENT_TEAM: 4MV5J2X948
+        DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
         SWIFT_VERSION: 6.0
 

@@ -1,0 +1,5 @@
+-keep class com.yausername.youtubedl_android.** { *; }
+-keep class org.mozilla.javascript.** { *; }
+-keep class org.mozilla.classfile.ClassFileWriter
+-dontwarn org.mozilla.javascript.tools.**
+-keepattributes *Annotation*

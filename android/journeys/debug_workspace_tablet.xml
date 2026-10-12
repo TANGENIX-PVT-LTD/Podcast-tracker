@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<journey name="Expanded tablet workspace navigation">
+    <description>Use the debug-only, non-authenticated fixture to verify PodTrackio's signed-in tablet UI without creating an account or mutating Supabase.</description>
+    <actions>
+        <action>Tap the "Preview tablet workspace" debug control</action>
+        <action>Verify that the Today learning desk is visible with Today, Current streak, and Level metrics</action>
+        <action>Tap the "Library" navigation item</action>
+        <action>Verify that library search, category filters, and demo episode rows are visible</action>
+        <action>Tap the "Build Better Habits with Systems" episode</action>
+        <action>Verify that the expanded two-pane tablet layout keeps Library visible beside the native player and Summary, Notes, and Quirky inspector tabs</action>
+        <action>Verify that completion, download, transcript editing, and transcript file import actions remain visible in the split-pane player</action>
+        <action>Tap the "Notes" inspector tab</action>
+        <action>Verify that the notes editor and cross-device save explanation are visible</action>
+        <action>Tap the player close control</action>
+        <action>Tap the "Progress" navigation item</action>
+        <action>Verify that lifetime learning, weekly goal, completed metrics, calendar, and schedule management are visible</action>
+        <action>Swipe upward and verify that achievements remain available below the calendar</action>
+        <action>Tap the "Settings" navigation item</action>
+        <action>Verify that the local debug fixture is truthfully labeled, and that all six themes, goals, and adaptive build-up are visible</action>
+        <action>Swipe upward inside the Settings sheet</action>
+        <action>Verify that three reminder times, weekdays, quiet hours, adaptive rescue, and the 8 GB download policy are visible</action>
+        <action>Swipe upward inside the Settings sheet again</action>
+        <action>Verify that offline quality and encrypted AI connection controls are visible</action>
+        <action>Swipe upward inside the Settings sheet again</action>
+        <action>Verify that category management is visible</action>
+        <action>Verify that the app process remains alive with no PodTrackio fatal exception</action>
+    </actions>
+</journey>

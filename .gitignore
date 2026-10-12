@@ -24,3 +24,20 @@ dist/
 *.mobileprovision
 Secrets.*
 Config.local.*
+
+# Mobile build outputs, signing material, and private machine state
+**/xcuserdata/
+.gradle/
+.kotlin/
+.idea/
+**/build/
+*.iml
+*.jks
+*.ipa
+*.apk
+*.aab
+*.xcarchive/
+local.properties
+android/artifacts/
+android/journeys/results/
+/PodcastTracker

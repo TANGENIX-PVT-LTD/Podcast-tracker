@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<journey name="Signed-out tablet launch and authentication entry">
+    <description>Verify that the full PodTrackio APK launches on an expanded Android tablet viewport with real product branding and exposes both Supabase OAuth entry points without crashing.</description>
+    <actions>
+        <action>Verify that Android asks whether PodTrackio may send notifications</action>
+        <action>Tap the "Allow" notification-permission button</action>
+        <action>Verify that the PodTrackio welcome screen is visible</action>
+        <action>Verify that the real PodTrackio logo and the "PodTrackio" wordmark are visible</action>
+        <action>Verify that the old headphone and "PT" placeholder branding are absent</action>
+        <action>Verify that the learning-continuity explanation mentions macOS and Android</action>
+        <action>Verify that the "Continue with Google" button is visible</action>
+        <action>Verify that the "Continue with Apple" button is visible</action>
+        <action>Verify that the app process remains alive with no PodTrackio fatal exception</action>
+    </actions>
+</journey>

@@ -1,0 +1,22 @@
+{
+  "journey": "player_tablet_v102.xml",
+  "version": "1.0.2",
+  "device": "Android API 36.1 emulator, 2560x1600, 320dpi",
+  "mode": "local preview data; XML and visual screenshot assertions",
+  "results": [
+    {"step": 1, "action": "Open preview tablet workspace", "status": "PASSED"},
+    {"step": 2, "action": "Open Library and select Build Better Habits with Systems", "status": "PASSED"},
+    {"step": 3, "action": "Verify focused player with Summary, Notes, Quirky and no browsing sidebar", "status": "PASSED", "evidence": "summary-final-v102.png"},
+    {"step": 4, "action": "Open Notes and verify editable field is visible", "status": "PASSED", "evidence": "notes-v102.png"},
+    {"step": 5, "action": "Open Quirky and verify question composer is visible", "status": "PASSED", "evidence": "quirky-v102.png"},
+    {"step": 6, "action": "Hide learning tools", "status": "PASSED", "evidence": "tools-hidden-v102.png"},
+    {"step": 7, "action": "Enter fullscreen and verify video playback, exit control, no episode actions", "status": "PASSED", "evidence": "fullscreen-v102.png"},
+    {"step": 8, "action": "Press Back and verify fullscreen exits to player", "status": "PASSED"},
+    {"step": 9, "action": "Show learning tools and open Summary", "status": "PASSED", "evidence": "summary-final-v102.png"},
+    {"step": 10, "action": "Return to Library and open Progress without crash", "status": "PASSED", "evidence": "progress-final-v102.png"}
+  ],
+  "instrumentationNotes": ["UIAutomator XML dumping intermittently failed to obtain idle state during media loading. The interrupted assertion attempt was rerun using screenshots; not reported as a passing XML run."],
+  "buildChecks": ["testFullDebugUnitTest", "lintFullDebug", "assembleFullDebug"],
+  "notVerified": ["physical tablet", "live OAuth login", "live AI provider calls", "cross-device cloud handoff"],
+  "apkSha256": "1254cefe91e5195c33f46256d6d88c230d7fbdfc546b23b131a3b73c4aabacc2"
+}

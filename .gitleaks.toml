@@ -1,0 +1,17 @@
+title = "PodTrackio credential scan"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "jwt"
+
+[[rules.allowlists]]
+description = "Exact existing Supabase anon identifiers; payload roles checked before allowlisting"
+condition = "AND"
+paths = ['''(^|/)(ios/)?Sources/PodcastTracker/Helpers/(AuthManager|SupabaseClient)\.swift$''']
+regexTarget = "secret"
+regexes = [
+  '''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZsaW9hYWRidXdycHptb3lxeXBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5ODM4NTgsImV4cCI6MjEwMjU1OTg1OH0\.ixV2gCaGGMA_ZU6UgS4AaD_Ifn3GyoZaK9rKgIxAM1A$''',
+  '''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpjeGRjaXdjd2Rzc292a3l2c2VhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NTQwNzksImV4cCI6MjA5NTAzMDA3OX0\.1K_qXiMLzfuLhFYHCclnnV5zh8rFWWedMDdKX5DmIEM$'''
+]

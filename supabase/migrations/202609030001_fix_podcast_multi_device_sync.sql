@@ -4,7 +4,7 @@ begin;
 -- The project started with user_id as text; UUID ownership is required for
 -- reliable auth.uid() RLS checks on macOS, iOS, and Android.
 alter table public.podcasts
-  alter column user_id type uuid using nullif(user_id, '')::uuid;
+  alter column user_id type uuid using nullif(user_id::text, '')::uuid;
 
 alter table public.podcasts add column if not exists category_id text;
 alter table public.podcasts add column if not exists completed_at timestamptz;
