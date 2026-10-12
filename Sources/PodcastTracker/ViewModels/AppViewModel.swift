@@ -6,6 +6,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case today = "Today"
     case library = "Library"
     case progress = "Progress"
+    case brain = "Brain"
 
     var id: String { rawValue }
     var icon: String {
@@ -13,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .today: "sun.max"
         case .library: "books.vertical"
         case .progress: "calendar"
+        case .brain: "brain"
         }
     }
 }
@@ -161,6 +163,7 @@ final class AppViewModel: ObservableObject {
         categories = dataManager.loadCategories()
         activities = dataManager.loadActivities()
         summaries = dataManager.loadSummaries()
+        quirkyConversations = dataManager.loadQuirkyConversations()
         habitSettings = dataManager.loadHabitSettings()
         notificationPreferences = dataManager.loadNotificationPreferences()
         focusCommitments = dataManager.loadFocusCommitments()
@@ -214,6 +217,7 @@ final class AppViewModel: ObservableObject {
         dataManager.saveCategories(categories)
         dataManager.saveActivities(activities)
         dataManager.saveSummaries(summaries)
+        dataManager.saveQuirkyConversations(quirkyConversations)
         dataManager.saveHabitSettings(habitSettings)
         dataManager.saveNotificationPreferences(notificationPreferences)
         dataManager.saveFocusCommitments(focusCommitments)
@@ -634,7 +638,7 @@ final class AppViewModel: ObservableObject {
         saveData()
     }
 
-    func askTranscriptQuestion(for podcast: Podcast, question: String, history: [(role: String, content: String)], model: QuirkyModel) async throws -> String {
+    func askTranscriptQuestion(for podcast: Podcast, question: String, history: [(role: String, content: String)], model: QuirkyModel, answerStyle: QuirkyAnswerStyle) async throws -> String {
         guard let key = KeychainStore.groqAPIKey() else { throw GroqError.missingKey }
         guard let document = DataManager.shared.loadTranscript(for: podcast.id), !document.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw GroqError.server("Generate the summary first so PodTrackio has a transcript to chat about.")
@@ -643,17 +647,19 @@ final class AppViewModel: ObservableObject {
             let total = Int($0.startSeconds); let stamp = String(format: "%d:%02d", total / 60, total % 60)
             return "[\(stamp)] \($0.text)"
         }.joined(separator: "\n")
-        return try await GroqClient.shared.chat(transcript: context, title: podcast.title, question: question, history: history, model: model, apiKey: key)
+        return try await GroqClient.shared.chat(transcript: context, title: podcast.title, question: question, history: history, model: model, answerStyle: answerStyle, apiKey: key)
     }
 
     func quirkyMessages(for podcastID: UUID) -> [QuirkyChatMessage] { quirkyConversations[podcastID] ?? [] }
 
     func appendQuirkyMessage(_ message: QuirkyChatMessage, podcastID: UUID) {
         quirkyConversations[podcastID, default: []].append(message)
+        dataManager.saveQuirkyConversations(quirkyConversations)
     }
 
     func clearQuirkyConversation(for podcastID: UUID) {
         quirkyConversations[podcastID] = []
+        dataManager.saveQuirkyConversations(quirkyConversations)
     }
 
     func generateSummary(for podcast: Podcast, transcript: TranscriptDocument? = nil, allowAudioTranscription: Bool = false) {

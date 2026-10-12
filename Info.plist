@@ -21,9 +21,9 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>PodTrackio</string>
 	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<string>PodTrackio</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

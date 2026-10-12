@@ -17,7 +17,7 @@ final class LocalMediaStore: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .invalidVideoID: "The YouTube video ID is invalid."
-            case .ytDLPUnavailable: "yt-dlp is unavailable on this Mac."
+            case .ytDLPUnavailable: "Offline media is unavailable on this device."
             case .ffmpegUnavailable: "ffmpeg is required for this download quality."
             case .storageLimitReached: "The 8 GB download limit has been reached. Delete a download before trying again."
             case .downloadFailed(let detail): detail
@@ -187,6 +187,14 @@ final class LocalMediaStore: ObservableObject {
             }
             do {
                 try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+                #if os(iOS)
+                let prepared = try await Self.prepareMobileDownload(
+                    videoID: request.videoID,
+                    destination: destination,
+                    quality: request.quality,
+                    maximumBytes: maximumBytes
+                )
+                #else
                 guard let invocation = Self.ytDLPInvocation(fileManager: fileManager) else {
                     throw MediaError.ytDLPUnavailable
                 }
@@ -202,6 +210,7 @@ final class LocalMediaStore: ObservableObject {
                     maximumBytes: maximumBytes,
                     invocation: invocation
                 )
+                #endif
                 guard prepared.byteCount <= remainingStorageBytes else {
                     try? fileManager.removeItem(at: prepared.url)
                     throw MediaError.storageLimitReached
@@ -290,9 +299,7 @@ final class LocalMediaStore: ObservableObject {
         maximumBytes: Int64,
         invocation: Invocation
     ) async throws -> PreparedMedia {
-        #if APP_STORE
-        throw MediaError.ytDLPUnavailable
-        #else
+        #if os(macOS) && !APP_STORE
         let processTask = Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
             let clientArguments = [
@@ -374,8 +381,49 @@ final class LocalMediaStore: ObservableObject {
         } onCancel: {
             processTask.cancel()
         }
+        #else
+        throw MediaError.ytDLPUnavailable
         #endif
     }
+
+    #if os(iOS)
+    private nonisolated static func prepareMobileDownload(
+        videoID: String,
+        destination: URL,
+        quality: DownloadQuality,
+        maximumBytes: Int64
+    ) async throws -> PreparedMedia {
+        let candidate = try await YouTubeStreamResolver.downloadableVideo(
+            videoId: videoID,
+            maximumHeight: quality.rawValue
+        )
+        if let expectedBytes = candidate.expectedBytes, expectedBytes > maximumBytes {
+            throw MediaError.storageLimitReached
+        }
+        let (temporaryURL, response) = try await URLSession.shared.download(from: candidate.url)
+        try Task.checkCancellation()
+        let expected = response.expectedContentLength
+        if expected > maximumBytes || (candidate.expectedBytes ?? 0) > maximumBytes {
+            throw MediaError.storageLimitReached
+        }
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.moveItem(at: temporaryURL, to: destination)
+        guard isCompleteMediaFile(destination, fileManager: fileManager),
+              let attributes = try? fileManager.attributesOfItem(atPath: destination.path),
+              let size = attributes[.size] as? NSNumber else {
+            try? fileManager.removeItem(at: destination)
+            throw MediaError.missingDownloadedFile
+        }
+        guard size.int64Value <= maximumBytes else {
+            try? fileManager.removeItem(at: destination)
+            throw MediaError.storageLimitReached
+        }
+        return PreparedMedia(url: destination, byteCount: size.int64Value, resolutionHeight: candidate.height)
+    }
+    #endif
 
     private nonisolated static func removeAttemptFiles(destination: URL, fileManager: FileManager) {
         let directory = destination.deletingLastPathComponent()
@@ -403,7 +451,7 @@ final class LocalMediaStore: ObservableObject {
     }
 
     private nonisolated static func ytDLPInvocation(fileManager: FileManager) -> Invocation? {
-        #if APP_STORE
+        #if !os(macOS) || APP_STORE
         nil
         #else
         for path in ["/opt/homebrew/bin/yt-dlp", "/usr/local/bin/yt-dlp", "/opt/local/bin/yt-dlp"]
@@ -421,7 +469,7 @@ final class LocalMediaStore: ObservableObject {
     }
 
     private nonisolated static func javaScriptRuntimeArguments(fileManager: FileManager) -> [String]? {
-        #if APP_STORE
+        #if !os(macOS) || APP_STORE
         nil
         #else
         for path in ["/opt/homebrew/bin/deno", "/usr/local/bin/deno", "/opt/local/bin/deno"]

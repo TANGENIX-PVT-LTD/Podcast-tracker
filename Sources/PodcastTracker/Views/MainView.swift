@@ -41,6 +41,7 @@ struct MainView: View {
                         case .today: TodayView()
                         case .library: LibraryView()
                         case .progress: LearningProgressView()
+                        case .brain: BrainView()
                         }
                     }
                 }

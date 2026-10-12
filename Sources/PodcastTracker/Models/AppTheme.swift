@@ -25,7 +25,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .system: "Follows your Mac accent and appearance"
+        case .system: "Follows your device accent and appearance"
         case .ocean: "Clear blue for focused listening"
         case .orchid: "A calm violet workspace"
         case .forest: "Grounded green for steady progress"
@@ -70,7 +70,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var backgroundColors: [Color] {
         switch self {
         case .system:
+            #if os(macOS)
             [Color(nsColor: .windowBackgroundColor), Color(nsColor: .underPageBackgroundColor)]
+            #else
+            [Color(uiColor: .systemBackground), Color(uiColor: .secondarySystemBackground)]
+            #endif
         case .ocean:
             [Color(red: 0.87, green: 0.95, blue: 0.98), Color(red: 0.74, green: 0.87, blue: 0.95)]
         case .orchid:

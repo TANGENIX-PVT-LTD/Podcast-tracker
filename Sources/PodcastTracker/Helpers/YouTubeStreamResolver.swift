@@ -8,6 +8,11 @@ enum NativePlaybackSource: Hashable {
 }
 
 enum YouTubeStreamResolver {
+    struct DownloadCandidate: Sendable {
+        let url: URL
+        let height: Int?
+        let expectedBytes: Int64?
+    }
     enum ResolverError: LocalizedError {
         case noPlayableStream
         case assetNotReady
@@ -38,7 +43,7 @@ enum YouTubeStreamResolver {
             }
             return AVPlayerItem(url: url)
         }
-        #if !APP_STORE
+        #if os(macOS) && !APP_STORE
         if let url = try? await ytDLPStreamURL(videoId: videoId) {
             return AVPlayerItem(url: url)
         }
@@ -65,7 +70,34 @@ enum YouTubeStreamResolver {
         throw ResolverError.noPlayableStream
     }
 
-    #if !APP_STORE
+    static func downloadableVideo(videoId: String, maximumHeight: Int) async throws -> DownloadCandidate {
+        let response = try await YTVideo(videoId: videoId)
+            .fetchStreamingInfosWithDownloadFormatsThrowing(youtubeModel: YouTubeModel(), useCookies: false)
+        let formats = response.defaultFormats
+            .filter {
+                $0 is VideoDownloadFormat
+                    && $0.url != nil
+                    && $0.mimeType?.hasPrefix("video/mp4") == true
+                    && ($0.height ?? 0) <= maximumHeight
+            }
+            .sorted {
+                let leftHeight = $0.height ?? 0
+                let rightHeight = $1.height ?? 0
+                return leftHeight == rightHeight
+                    ? ($0.averageBitrate ?? 0) > ($1.averageBitrate ?? 0)
+                    : leftHeight > rightHeight
+            }
+        guard let format = formats.first, let url = format.url else {
+            throw ResolverError.noPlayableStream
+        }
+        return DownloadCandidate(
+            url: url,
+            height: format.height,
+            expectedBytes: format.contentLength.map(Int64.init)
+        )
+    }
+
+    #if os(macOS) && !APP_STORE
     private static func ytDLPStreamURL(videoId: String) async throws -> URL {
         let allowedCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
         guard videoId.count == 11, videoId.unicodeScalars.allSatisfy(allowedCharacters.contains) else {

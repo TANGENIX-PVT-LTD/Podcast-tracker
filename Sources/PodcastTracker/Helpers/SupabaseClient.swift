@@ -136,10 +136,15 @@ final class SupabaseClient: @unchecked Sendable {
         let url = supabaseURL.appendingPathComponent("rest/v1/podcasts")
         let names = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
         let rows = podcasts.map { PodcastDTO(model: $0, legacyCategory: names[$0.categoryID] ?? "General") }
-        let encoded = try encoder.encode(rows)
-        let data = try await addUserIdToArray(encoded)
         let headers = ["Prefer": "resolution=merge-duplicates"]
-        _ = try await sendRequest(url: url, method: "POST", body: data, customHeaders: headers)
+        // Keep requests small enough for the hosted PostgREST gateway. The
+        // original all-library request was repeatedly killed by its timeout
+        // manager before PostgreSQL saw it.
+        for start in stride(from: 0, to: rows.count, by: 10) {
+            let batch = Array(rows[start..<min(start + 10, rows.count)])
+            let data = try await addUserIdToArray(encoder.encode(batch))
+            _ = try await sendRequest(url: url, method: "POST", body: data, customHeaders: headers)
+        }
     }
 
     func upsertPodcasts(_ podcasts: [Podcast]) async throws {
@@ -171,14 +176,15 @@ final class SupabaseClient: @unchecked Sendable {
     func upsertCollections(_ collections: [PodcastCollection]) async throws {
         guard !collections.isEmpty else { return }
         let url = supabaseURL.appendingPathComponent("rest/v1/podcast_collections")
-        let encoded = try encoder.encode(collections.map(CollectionDTO.init))
-        let data = try await addUserIdToArray(encoded)
-        _ = try await sendRequest(
-            url: url,
-            method: "POST",
-            body: data,
-            customHeaders: ["Prefer": "resolution=merge-duplicates"]
-        )
+        for collection in collections {
+            let data = try await addUserIdToArray(encoder.encode([CollectionDTO(collection)]))
+            _ = try await sendRequest(
+                url: url,
+                method: "POST",
+                body: data,
+                customHeaders: ["Prefer": "resolution=merge-duplicates"]
+            )
+        }
     }
 
     func deleteCollection(id: UUID) async throws {
@@ -296,10 +302,15 @@ struct PodcastDTO: Codable {
     /// library (for example, only some episodes having playback progress)
     /// fail with PGRST102 and prevented the entire podcast list from syncing.
     private enum CodingKeys: String, CodingKey {
-        case id, title, url, youtubeVideoId, thumbnailURL, dateAdded, notes
+        case id, title, url, youtubeVideoId, dateAdded, notes
         case totalWatchedSeconds, lastWatchedDate, lastPlaybackPosition
-        case isCompleted, completedAt, scheduledAt, collectionIDs
-        case categoryID, category, duration
+        case isCompleted, completedAt, scheduledAt, category, duration
+        // JSONDecoder converts snake_case to lower-camel-case, not Swift's
+        // acronym spelling. These aliases keep both encoding and decoding on
+        // the exact Postgres columns (thumbnail_url, collection_ids, etc.).
+        case thumbnailURL = "thumbnailUrl"
+        case collectionIDs = "collectionIds"
+        case categoryID = "categoryId"
     }
 
     init(model: Podcast, legacyCategory: String) {
@@ -350,6 +361,13 @@ struct CollectionDTO: Codable {
     var dateAdded: Date
     var sortOrder: Int
     var videoIDs: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, dateAdded, sortOrder
+        case sourcePlaylistID = "sourcePlaylistId"
+        case sourceURL = "sourceUrl"
+        case videoIDs = "videoIds"
+    }
 
     init(_ model: PodcastCollection) {
         id = model.id
@@ -408,6 +426,12 @@ struct ActivityDTO: Codable {
     var dateKey: String; var watchedSeconds: Double; var sessions: Int; var goalMinutes: Double; var goalCompleted: Bool
     var xpEarned: Int; var completedPodcastIDs: [UUID]; var xpAwardedMinutes: Int
     var dailyGoalXPAwarded: Bool; var weeklyGoalXPAwarded: Bool
+    private enum CodingKeys: String, CodingKey {
+        case dateKey, watchedSeconds, sessions, goalMinutes, goalCompleted, xpEarned, xpAwardedMinutes
+        case completedPodcastIDs = "completedPodcastIds"
+        case dailyGoalXPAwarded = "dailyGoalXpAwarded"
+        case weeklyGoalXPAwarded = "weeklyGoalXpAwarded"
+    }
     init(_ model: DailyLearningActivity) {
         dateKey = model.dateKey; watchedSeconds = model.watchedSeconds; sessions = model.sessions
         goalMinutes = model.goalMinutes; goalCompleted = model.goalCompleted; xpEarned = model.xpEarned
@@ -422,7 +446,12 @@ struct SummaryDTO: Codable {
     var majorTakeaways: [PodcastSummary.Takeaway]; var actionPlan: [PodcastSummary.ActionStep]
     var dynamicSections: [PodcastSummary.Section]?
     var generatedAt: Date; var transcriptSource: TranscriptSource; var modelName: String; var actionPlanXPGranted: Bool
-    enum CodingKeys: String, CodingKey { case podcastID, brief, keyTopics, majorTakeaways, actionPlan; case dynamicSections = "dynamic_sections"; case generatedAt, transcriptSource; case modelName = "model"; case actionPlanXPGranted }
+    enum CodingKeys: String, CodingKey {
+        case brief, keyTopics, majorTakeaways, actionPlan, dynamicSections, generatedAt, transcriptSource
+        case podcastID = "podcastId"
+        case modelName = "model"
+        case actionPlanXPGranted = "actionPlanXpGranted"
+    }
     init(_ value: PodcastSummary) {
         podcastID = value.podcastID; brief = value.brief; keyTopics = value.keyTopics
         majorTakeaways = value.majorTakeaways; actionPlan = value.actionPlan; dynamicSections = value.sections; generatedAt = value.generatedAt

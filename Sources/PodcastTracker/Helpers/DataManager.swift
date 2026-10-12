@@ -17,6 +17,7 @@ final class DataManager: @unchecked Sendable {
     private let collectionsFileName = "podcast_collections.json"
     private let downloadRecordsFileName = "download_records.json"
     private let downloadSettingsFileName = "download_settings.json"
+    private let quirkyConversationsFileName = "quirky_conversations.json"
 
     /// A decoding failure must never be treated as an intentionally empty
     /// library. Keep the original file intact so it can be recovered.
@@ -52,6 +53,7 @@ final class DataManager: @unchecked Sendable {
     private var collectionsURL: URL { appSupportURL.appendingPathComponent(collectionsFileName) }
     private var downloadRecordsURL: URL { appSupportURL.appendingPathComponent(downloadRecordsFileName) }
     private var downloadSettingsURL: URL { appSupportURL.appendingPathComponent(downloadSettingsFileName) }
+    private var quirkyConversationsURL: URL { appSupportURL.appendingPathComponent(quirkyConversationsFileName) }
     var transcriptCacheURL: URL {
         let url = appSupportURL.appendingPathComponent("Transcripts", isDirectory: true)
         if !fileManager.fileExists(atPath: url.path) {
@@ -204,6 +206,14 @@ final class DataManager: @unchecked Sendable {
     func saveDownloadSettings(_ settings: DownloadSettings) { save(settings, to: downloadSettingsURL) }
     func loadDownloadSettings() -> DownloadSettings { load(DownloadSettings.self, from: downloadSettingsURL) ?? DownloadSettings() }
 
+    func saveQuirkyConversations(_ conversations: [UUID: [QuirkyChatMessage]]) {
+        save(conversations, to: quirkyConversationsURL)
+    }
+
+    func loadQuirkyConversations() -> [UUID: [QuirkyChatMessage]] {
+        load([UUID: [QuirkyChatMessage]].self, from: quirkyConversationsURL) ?? [:]
+    }
+
     func saveTranscript(_ transcript: TranscriptDocument) {
         save(transcript, to: transcriptCacheURL.appendingPathComponent("\(transcript.podcastID.uuidString).json"))
     }
@@ -245,6 +255,7 @@ final class DataManager: @unchecked Sendable {
         try? fileManager.removeItem(at: collectionsURL)
         try? fileManager.removeItem(at: downloadRecordsURL)
         try? fileManager.removeItem(at: downloadSettingsURL)
+        try? fileManager.removeItem(at: quirkyConversationsURL)
         try? fileManager.removeItem(at: mediaCacheURL)
     }
 }

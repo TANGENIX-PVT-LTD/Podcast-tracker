@@ -1,4 +1,7 @@
 import Foundation
+#if os(iOS)
+import YouTubeKit
+#endif
 
 enum PlaylistImporter {
     enum ImportError: LocalizedError {
@@ -37,15 +40,56 @@ enum PlaylistImporter {
     }
 
     static func preview(url input: String) async throws -> PlaylistPreview {
-        #if APP_STORE
-        throw ImportError.ytDLPUnavailable
-        #else
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed),
               components.host?.contains("youtube.com") == true,
-              components.queryItems?.first(where: { $0.name == "list" })?.value?.isEmpty == false else {
+              let playlistID = components.queryItems?.first(where: { $0.name == "list" })?.value,
+              !playlistID.isEmpty else {
             throw ImportError.invalidPlaylistURL
         }
+
+        #if os(iOS)
+        let model = YouTubeModel()
+        let browseID = playlistID.hasPrefix("VL") ? playlistID : "VL\(playlistID)"
+        var response = try await YTPlaylist(playlistId: browseID)
+            .fetchVideosThrowing(youtubeModel: model, useCookies: false)
+        var continuationCount = 0
+        while response.continuationToken != nil, continuationCount < 20, !Task.isCancelled {
+            let next = try await response.fetchContinuationThrowing(youtubeModel: model, useCookies: false)
+            response.mergeWithContinuation(next)
+            continuationCount += 1
+        }
+        try Task.checkCancellation()
+
+        let episodes = response.results.enumerated().compactMap { offset, video -> PlaylistEpisode? in
+            guard video.videoId.count == 11,
+                  let title = video.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !title.isEmpty else { return nil }
+            let thumbnail = video.thumbnails.max { lhs, rhs in
+                (lhs.width ?? 0) * (lhs.height ?? 0) < (rhs.width ?? 0) * (rhs.height ?? 0)
+            }?.url.absoluteString
+            return PlaylistEpisode(
+                videoID: video.videoId,
+                title: title,
+                url: "https://www.youtube.com/watch?v=\(video.videoId)",
+                thumbnailURL: thumbnail ?? "https://img.youtube.com/vi/\(video.videoId)/mqdefault.jpg",
+                playlistIndex: offset
+            )
+        }
+        guard !episodes.isEmpty else { throw ImportError.emptyPlaylist }
+        let expectedCount = response.videoCount.flatMap { count in
+            Int(count.filter(\.isNumber))
+        }
+        return PlaylistPreview(
+            playlistID: playlistID,
+            title: response.title ?? "YouTube Playlist",
+            sourceURL: trimmed,
+            episodes: episodes,
+            unavailableCount: max(0, (expectedCount ?? episodes.count) - episodes.count)
+        )
+        #elseif APP_STORE
+        throw ImportError.ytDLPUnavailable
+        #else
         guard let executable = ytDLPURL() else { throw ImportError.ytDLPUnavailable }
 
         let task = Task.detached(priority: .userInitiated) {
@@ -101,9 +145,8 @@ enum PlaylistImporter {
             )
         }
         guard !episodes.isEmpty else { throw ImportError.emptyPlaylist }
-        let playlistID = payload.id ?? components.queryItems?.first(where: { $0.name == "list" })?.value ?? UUID().uuidString
         return PlaylistPreview(
-            playlistID: playlistID,
+            playlistID: payload.id ?? playlistID,
             title: payload.title ?? "YouTube Playlist",
             sourceURL: trimmed,
             episodes: episodes,

@@ -5,6 +5,8 @@ enum KeychainStore {
     private static let service = "com.tangenix.podtrackio"
     private static let groqAccount = "groq-api-key"
     private static let transcriptAPIAccount = "transcriptapi-api-key"
+    private static let authAccessTokenAccount = "supabase-access-token"
+    private static let authRefreshTokenAccount = "supabase-refresh-token"
 
     static func saveGroqAPIKey(_ key: String) throws {
         let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -56,6 +58,29 @@ enum KeychainStore {
 
     static func removeTranscriptAPIKey() throws {
         try remove(account: transcriptAPIAccount)
+    }
+
+    static func saveAuthSession(accessToken: String, refreshToken: String) throws {
+        try save(accessToken, account: authAccessTokenAccount)
+        do {
+            try save(refreshToken, account: authRefreshTokenAccount)
+        } catch {
+            try? remove(account: authAccessTokenAccount)
+            throw error
+        }
+    }
+
+    static func authAccessToken() -> String? {
+        value(account: authAccessTokenAccount)
+    }
+
+    static func authRefreshToken() -> String? {
+        value(account: authRefreshTokenAccount)
+    }
+
+    static func removeAuthSession() throws {
+        try remove(account: authAccessTokenAccount)
+        try remove(account: authRefreshTokenAccount)
     }
 
     private static func save(_ key: String, account: String) throws {

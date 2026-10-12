@@ -25,6 +25,26 @@ struct SupabasePodcastPayloadTests {
         #expect(rows[0]["completed_at"] is NSNull)
         #expect(rows[0]["scheduled_at"] is NSNull)
         #expect(rows[0]["duration"] is NSNull)
+        #expect(rows[0].keys.contains("thumbnail_url"))
+        #expect(rows[0].keys.contains("collection_ids"))
+        #expect(rows[0].keys.contains("category_id"))
+        #expect(!rows[0].keys.contains("thumbnail_u_r_l"))
+        #expect(!rows[0].keys.contains("collection_i_ds"))
+        #expect(!rows[0].keys.contains("category_i_d"))
+    }
+
+    @Test func podcastRowsDecodeDatabaseAcronymColumns() throws {
+        let id = UUID()
+        let json = """
+        [{"id":"\(id.uuidString)","title":"Synced","url":"https://youtu.be/aaaaaaaaaaa","youtube_video_id":"aaaaaaaaaaa","thumbnail_url":"https://example.com/t.jpg","date_added":"2026-09-03T00:00:00Z","notes":"","total_watched_seconds":0,"last_watched_date":null,"last_playback_position":0,"is_completed":false,"completed_at":null,"scheduled_at":null,"collection_ids":[],"category_id":"general","category":"General","duration":null}]
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let rows = try decoder.decode([PodcastDTO].self, from: Data(json.utf8))
+        #expect(rows.first?.thumbnailURL == "https://example.com/t.jpg")
+        #expect(rows.first?.collectionIDs == [])
+        #expect(rows.first?.categoryID == "general")
     }
 }
 
@@ -176,12 +196,14 @@ struct NotificationTests {
 struct FocusCommitmentTests {
     private func date(_ value: String) -> Date { ISO8601DateFormatter().date(from: value)! }
 
+    #if os(macOS)
     @Test func menuBarTitlesStayCompact() {
         let title = MenuBarText.shortened("Continue A Very Long Educational Podcast Episode Title")
         #expect(title.count == 30)
         #expect(title.hasSuffix("..."))
         #expect(MenuBarText.shortened("Continue Biology") == "Continue Biology")
     }
+    #endif
 
     @Test func onlyExplicitActionsRequestImmediatePlayback() {
         #expect(CommitmentLaunchIntent.explicitUserAction.requestsPlaybackStart)
@@ -390,14 +412,84 @@ struct ContractTests {
         #expect(QuirkyModel.deep.reasoningEffort == "high")
         #expect(QuirkyModel.balanced.reasoningEffort == "medium")
         #expect(QuirkyModel.instant.reasoningEffort == "low")
+        #expect(QuirkyModel.deep.maximumCompletionTokens(for: .detailed) > QuirkyModel.instant.maximumCompletionTokens(for: .concise))
     }
 
     @Test func quirkyPromptGroundsAdviceAndProtectsProjectContext() {
-        let prompt = QuirkyPrompt.system(episodeTitle: "Reddit strategy", transcript: "[1:10] Seven steps")
+        let prompt = QuirkyPrompt.system(episodeTitle: "Reddit strategy", transcript: "[1:10] Seven steps", answerStyle: .detailed)
         #expect(prompt.contains("transcript as the primary source of truth"))
         #expect(prompt.contains("never assume which project"))
         #expect(prompt.contains("action, deliverable, constraint, and success check"))
         #expect(prompt.contains("[1:10] Seven steps"))
+        #expect(prompt.contains("ANSWER STRUCTURE: Detailed"))
+        #expect(prompt.contains("Markdown sections"))
+    }
+
+    @Test func quirkyAnswerStylesOfferTheRequestedLengths() {
+        #expect(QuirkyAnswerStyle.allCases.map(\.title) == ["Concise", "Medium", "Detailed"])
+        #expect(QuirkyAnswerStyle.concise.writingInstruction.contains("HARD LIMIT: 140 words"))
+        #expect(QuirkyAnswerStyle.concise.writingInstruction.contains("## Key points"))
+    }
+
+    @Test func quirkyResponseParserPreservesSemanticBlocks() {
+        let response = """
+        **Direct answer.** The transcript supports one useful conclusion.
+
+        **Three formats:**
+        1. **Build log.** Show what changed.
+        2. **Problem first.** Lead with the pain.
+        - Keep the ask specific.
+        """
+        let blocks = QuirkyResponseDocument(markdown: response).blocks
+        #expect(blocks == [
+            .heading("Direct answer."),
+            .paragraph("The transcript supports one useful conclusion."),
+            .heading("Three formats"),
+            .numbered(1, "**Build log.** Show what changed."),
+            .numbered(2, "**Problem first.** Lead with the pain."),
+            .bullet("Keep the ask specific.")
+        ])
+    }
+
+    @Test func conciseResponseCollapsesProviderOverflow() {
+        let response = (1...12).map { "## Section \($0)\n" + String(repeating: "useful ", count: 40) }.joined(separator: "\n")
+        let document = QuirkyResponseDocument(markdown: response)
+        #expect(document.concisePreviewBlockCount >= 3)
+        #expect(document.concisePreviewBlockCount < document.blocks.count)
+    }
+
+    @Test func answerStylesDeterministicallyChangeTheReturnedContent() {
+        let response = """
+        ## Answer
+        \(String(repeating: "context ", count: 100))
+        ## Formats
+        1. Build in public with a specific question.
+        2. Lead with the problem and show the actual artifact.
+        3. Answer existing discussions before making a new post.
+        4. Add a promotional conclusion that should not survive concise mode.
+        """
+        let concise = QuirkyAnswerFormatter.format(response, style: .concise)
+        let medium = QuirkyAnswerFormatter.format(response, style: .medium)
+        let detailed = QuirkyAnswerFormatter.format(response, style: .detailed)
+
+        #expect(concise.split(whereSeparator: \.isWhitespace).count <= 145)
+        #expect(concise.contains("## Key points"))
+        #expect(!concise.contains("4. Add a promotional"))
+        #expect(medium.count > concise.count)
+        #expect(detailed.count >= medium.count)
+    }
+
+    @Test func quirkyConversationArchiveRoundTripsPerVideo() throws {
+        let podcastID = UUID()
+        let original = [
+            podcastID: [
+                QuirkyChatMessage(role: .user, text: "Question", model: nil),
+                QuirkyChatMessage(role: .quirky, text: "Answer", model: .balanced, answerStyle: .concise)
+            ]
+        ]
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode([UUID: [QuirkyChatMessage]].self, from: data)
+        #expect(decoded == original)
     }
 
     @Test func quirkyContextCapsTranscriptAndPrioritizesQuestionMatches() {
@@ -441,10 +533,11 @@ struct ContractTests {
         )
         let data = try JSONEncoder().encode(PodcastDTO(model: podcast, legacyCategory: "Science"))
         let text = String(decoding: data, as: UTF8.self)
-        #expect(text.contains("categoryID"))
+        #expect(text.contains("categoryId"))
         #expect(text.contains("completedAt"))
         #expect(text.contains("scheduledAt"))
         #expect(text.contains(collectionID.uuidString))
+        #expect(text.contains("collectionIds"))
         #expect(!text.localizedCaseInsensitiveContains("groq"))
         #expect(!text.contains("fileName"))
         #expect(!text.contains("byteCount"))

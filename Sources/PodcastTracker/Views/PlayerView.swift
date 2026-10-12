@@ -540,9 +540,11 @@ private struct TranscriptChatInspector: View {
     @State private var errorMessage: String?
     @State private var responseTask: Task<Void, Never>?
     @AppStorage("quirky.selectedModel") private var selectedModelRaw = QuirkyModel.balanced.rawValue
+    @AppStorage("quirky.answerStyle") private var answerStyleRaw = QuirkyAnswerStyle.medium.rawValue
     @FocusState private var composerFocused: Bool
 
     private var selectedModel: QuirkyModel { QuirkyModel(rawValue: selectedModelRaw) ?? .balanced }
+    private var answerStyle: QuirkyAnswerStyle { QuirkyAnswerStyle(rawValue: answerStyleRaw) ?? .medium }
     private var messages: [QuirkyChatMessage] { viewModel.quirkyMessages(for: podcast.id) }
 
     var body: some View {
@@ -601,7 +603,7 @@ private struct TranscriptChatInspector: View {
                             HStack(alignment: .center, spacing: 10) {
                                 QuirkyMark(size: 28)
                                 ProgressView().controlSize(.small)
-                                Text("Quirky is thinking with (selectedModel.title.lowercased()) reasoning…").font(.callout).foregroundStyle(.secondary)
+                                Text("Quirky is thinking with \(selectedModel.title.lowercased()) reasoning…").font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }
                         }
@@ -632,6 +634,7 @@ private struct TranscriptChatInspector: View {
                         Label("Transcript", systemImage: "text.quote")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        answerStyleMenu
                         Spacer()
                         Button { send() } label: {
                             Image(systemName: "arrow.up").font(.headline).frame(width: 30, height: 30)
@@ -665,19 +668,39 @@ private struct TranscriptChatInspector: View {
         .help(selectedModel.detail)
     }
 
+    private var answerStyleMenu: some View {
+        Menu {
+            ForEach(QuirkyAnswerStyle.allCases) { style in
+                Button {
+                    answerStyleRaw = style.rawValue
+                } label: {
+                    Label(style.title, systemImage: style == answerStyle ? "checkmark" : "text.alignleft")
+                }
+            }
+        } label: {
+            Label(answerStyle.title, systemImage: "text.alignleft")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(isThinking)
+        .help(answerStyle.detail)
+    }
+
     private var canSend: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isThinking }
 
     private func send(_ suggestedQuestion: String? = nil) {
         let question = (suggestedQuestion ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         let model = selectedModel
+        let style = answerStyle
         let history = messages.map { ($0.role == .user ? "user" : "assistant", $0.text) }
         draft = ""; errorMessage = nil; viewModel.appendQuirkyMessage(.init(role: .user, text: question, model: nil), podcastID: podcast.id); isThinking = true
         responseTask = Task {
             do {
-                let answer = try await viewModel.askTranscriptQuestion(for: podcast, question: question, history: history, model: model)
+                let answer = try await viewModel.askTranscriptQuestion(for: podcast, question: question, history: history, model: model, answerStyle: style)
                 guard !Task.isCancelled else { return }
-                viewModel.appendQuirkyMessage(.init(role: .quirky, text: answer, model: model), podcastID: podcast.id); isThinking = false
+                viewModel.appendQuirkyMessage(.init(role: .quirky, text: answer, model: model, answerStyle: style), podcastID: podcast.id); isThinking = false
             } catch is CancellationError {
                 return
             } catch {
@@ -715,15 +738,101 @@ private struct QuirkyMessageRow: View {
         } else {
             HStack(alignment: .top, spacing: 10) {
                 QuirkyMark(size: 30)
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) { Text("Quirky").font(.caption.bold()); if let model = message.model { Text(model.title).font(.caption2).foregroundStyle(.tertiary) } }
-                    Text(renderedText).textSelection(.enabled).lineSpacing(3).frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 6) {
+                        Text("Quirky").font(.caption.bold())
+                        if let model = message.model { Text(model.title).font(.caption2).foregroundStyle(.tertiary) }
+                        if let style = message.answerStyle {
+                            Text("·").foregroundStyle(.tertiary)
+                            Text(style.title).font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                    QuirkyStructuredAnswer(message: message)
                 }
                 Spacer(minLength: 24)
             }
         }
     }
-    private var renderedText: AttributedString { (try? AttributedString(markdown: message.text)) ?? AttributedString(message.text) }
+}
+
+private struct QuirkyStructuredAnswer: View {
+    let message: QuirkyChatMessage
+    @State private var isExpanded = false
+
+    private var document: QuirkyResponseDocument { .init(markdown: message.text) }
+    private var shouldCollapse: Bool {
+        message.answerStyle == .concise && document.concisePreviewBlockCount < document.blocks.count
+    }
+    private var visibleBlocks: ArraySlice<QuirkyResponseDocument.Block> {
+        if shouldCollapse && !isExpanded {
+            document.blocks.prefix(document.concisePreviewBlockCount)
+        } else {
+            document.blocks[...]
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(visibleBlocks.enumerated()), id: \.offset) { _, block in
+                QuirkyAnswerBlock(block: block)
+            }
+
+            if shouldCollapse {
+                Button(isExpanded ? "Collapse to concise" : "Show full answer") {
+                    withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+                }
+                .buttonStyle(.plain)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.top, 2)
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct QuirkyAnswerBlock: View {
+    let block: QuirkyResponseDocument.Block
+
+    var body: some View {
+        switch block {
+        case .heading(let text):
+            inlineText(text)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .padding(.top, 3)
+        case .paragraph(let text):
+            inlineText(text)
+                .font(.body)
+                .lineSpacing(4)
+        case .bullet(let text):
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 5, height: 5)
+                inlineText(text)
+                    .font(.body)
+                    .lineSpacing(3)
+            }
+        case .numbered(let number, let text):
+            HStack(alignment: .top, spacing: 10) {
+                Text("\(number)")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 22, height: 22)
+                    .background(Color.accentColor.opacity(0.13), in: .circle)
+                inlineText(text)
+                    .font(.body)
+                    .lineSpacing(3)
+                    .padding(.top, 1)
+            }
+        }
+    }
+
+    private func inlineText(_ markdown: String) -> Text {
+        Text((try? AttributedString(markdown: markdown)) ?? AttributedString(markdown))
+    }
 }
 
 private struct PasteTranscriptSheet: View {

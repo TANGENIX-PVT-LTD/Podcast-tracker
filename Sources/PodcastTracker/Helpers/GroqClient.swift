@@ -16,7 +16,7 @@ enum GroqError: LocalizedError, Equatable {
         case .rateLimited(let seconds): seconds.map { "Groq is rate-limiting requests. Try again in \($0) seconds." } ?? "Groq is rate-limiting requests. Try again shortly."
         case .modelUnavailable: "The requested Groq model is currently unavailable. Your existing summary is unchanged."
         case .offline: "You appear to be offline. Reconnect and try again."
-        case .malformedResponse: "Groq returned an unreadable summary. Try again; your existing summary is unchanged."
+        case .malformedResponse: "Groq returned an unreadable response. Please try again."
         case .server(let message): message
         }
     }
@@ -43,7 +43,7 @@ struct GroqTranscriptPayload: Decodable, Sendable {
     let segments: [Segment]?
 }
 
-enum QuirkyModel: String, CaseIterable, Identifiable, Sendable {
+enum QuirkyModel: String, CaseIterable, Identifiable, Codable, Sendable, Equatable {
     case deep
     case balanced
     case instant
@@ -85,10 +85,61 @@ enum QuirkyModel: String, CaseIterable, Identifiable, Sendable {
         }
     }
     var temperature: Double { self == .balanced ? 1.0 : 0.55 }
+    /// Reasoning tokens count toward this limit. The deeper tiers need enough
+    /// headroom to reason *and* return a visible final answer.
+    func maximumCompletionTokens(for style: QuirkyAnswerStyle) -> Int {
+        switch style {
+        case .concise: 1_800
+        case .medium: 2_600
+        case .detailed: 3_600
+        }
+    }
+
+    var fallbackReasoningEffort: String {
+        switch self {
+        case .balanced: "none"
+        case .deep, .instant: "low"
+        }
+    }
+}
+
+enum QuirkyAnswerStyle: String, CaseIterable, Identifiable, Codable, Sendable, Equatable {
+    case concise
+    case medium
+    case detailed
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var detail: String {
+        switch self {
+        case .concise: "Direct answer with only the essentials"
+        case .medium: "A clear, scannable answer with useful context"
+        case .detailed: "A thorough breakdown with an actionable plan"
+        }
+    }
+    var writingInstruction: String {
+        switch self {
+        case .concise:
+            """
+            HARD LIMIT: 140 words. Use exactly this Markdown shape:
+            ## Answer
+            One short paragraph of no more than 3 sentences.
+
+            ## Key points
+            - 2 or 3 short bullets, each containing one idea.
+
+            Add a final “## Next move” with one sentence only when action is relevant. Never add another section, preamble, or closing summary.
+            """
+        case .medium:
+            "Use 250–600 words. Start with “## Answer”, then use 2–5 short Markdown sections with bullets where useful. Keep every paragraph under 4 sentences."
+        case .detailed:
+            "Be as thorough as the question and transcript require; there is no artificial word target. Start with “## Answer”, then use clear Markdown sections for evidence, analysis, and a concrete plan when relevant. Keep paragraphs readable and do not pad unsupported detail."
+        }
+    }
 }
 
 enum QuirkyPrompt {
-    static func system(episodeTitle: String, transcript: String) -> String {
+    static func system(episodeTitle: String, transcript: String, answerStyle: QuirkyAnswerStyle = .medium) -> String {
         """
         You are Quirky, Tan's transcript-grounded learning mentor inside PodTrackio. You are a sharp thinking partner: practical, candid, curious, and allergic to generic advice.
 
@@ -113,7 +164,11 @@ enum QuirkyPrompt {
         - Use examples grounded in Tan's stated situation. Never fabricate his audience, budget, metrics, assets, or capabilities.
 
         WRITING STANDARD
-        Write like a top-tier mentor in a real working session: concise, specific, confident, and human. Use short sections or bullets only when they make the answer easier to act on. Avoid motivational filler, vague verbs such as “optimize” without saying how, canned summaries, and bloated action plans. Match Tan's language and level of detail. End with a single clear next move when action is appropriate; do not force one onto simple factual answers.
+        Write like a top-tier mentor in a real working session: concise, specific, confident, and human. Write polished Markdown: use headings, numbered steps, and bullets with deliberate spacing so the answer is easy to scan. Never run headings, paragraphs, or list items together. Avoid motivational filler, vague verbs such as “optimize” without saying how, canned summaries, and bloated action plans. Match Tan's language and level of detail. End with a single clear next move when action is appropriate; do not force one onto simple factual answers.
+
+        ANSWER STRUCTURE: \(answerStyle.title)
+        \(answerStyle.writingInstruction)
+        The selected structure is a hard output contract. Put a blank line before every heading and list. Never place a heading directly after the final word of a paragraph.
 
         EPISODE
         \(episodeTitle)
@@ -239,27 +294,80 @@ final class GroqClient: @unchecked Sendable {
         catch { throw GroqError.malformedResponse }
     }
 
-    func chat(transcript: String, title: String, question: String, history: [(role: String, content: String)], model: QuirkyModel, apiKey: String) async throws -> String {
+    func chat(transcript: String, title: String, question: String, history: [(role: String, content: String)], model: QuirkyModel, answerStyle: QuirkyAnswerStyle, apiKey: String) async throws -> String {
         let excerpt = QuirkyContext.transcriptExcerpt(transcript, for: question)
-        let system = QuirkyPrompt.system(episodeTitle: title, transcript: excerpt)
+        let system = QuirkyPrompt.system(episodeTitle: title, transcript: excerpt, answerStyle: answerStyle)
         var messages: [[String: String]] = [["role": "system", "content": system]]
         messages.append(contentsOf: QuirkyContext.recentHistory(history))
         messages.append(["role": "user", "content": String(question.prefix(1_000))])
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model.modelID,
             "messages": messages,
             "temperature": model.temperature,
             "reasoning_effort": model.reasoningEffort,
-            "reasoning_format": "hidden",
-            "max_completion_tokens": 800
+            "max_completion_tokens": model.maximumCompletionTokens(for: answerStyle)
         ]
+        // GPT-OSS does not support reasoning_format. Qwen does. Using the
+        // appropriate flag per family prevents Deep from being rejected.
+        if model == .balanced {
+            body["reasoning_format"] = "hidden"
+        } else {
+            body["include_reasoning"] = false
+        }
+        var choice = try await chatChoice(body: body, apiKey: apiKey)
+        if choice.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false,
+           choice.finishReason == "length" {
+            // Reasoning models can occasionally spend their entire first
+            // allowance thinking. Retry invisibly with lighter reasoning
+            // instead of making the person solve a provider token problem.
+            body["reasoning_effort"] = model.fallbackReasoningEffort
+            choice = try await chatChoice(body: body, apiKey: apiKey)
+        }
+        guard let content = choice.content?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else {
+            throw GroqError.malformedResponse
+        }
+        return QuirkyAnswerFormatter.format(content, style: answerStyle)
+    }
+
+    func brainReply(system: String, question: String, history: [BrainMessage], model: QuirkyModel = .deep, answerStyle: QuirkyAnswerStyle = .medium, apiKey: String) async throws -> BrainReply {
+        var body = BrainRequest.body(system: system, question: question, history: history, model: model, answerStyle: answerStyle)
+        var choice = try await chatChoice(body: body, apiKey: apiKey)
+        if choice.content?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false, choice.finishReason == "length" {
+            body["reasoning_effort"] = model.fallbackReasoningEffort
+            choice = try await chatChoice(body: body, apiKey: apiKey)
+        }
+        guard choice.finishReason != "length", let content = choice.content, let data = content.data(using: .utf8),
+              let reply = try? JSONDecoder().decode(BrainReply.self, from: data), !reply.answer.isEmpty else { throw GroqError.malformedResponse }
+        return reply
+    }
+
+    private func chatChoice(body: [String: Any], apiKey: String) async throws -> ChatChoice {
         var request = URLRequest(url: baseURL.appendingPathComponent("chat/completions"))
-        request.httpMethod = "POST"; request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let data = try await perform(request)
-        struct Response: Decodable { struct Choice: Decodable { struct Message: Decodable { let content: String }; let message: Message }; let choices: [Choice] }
-        guard let content = try JSONDecoder().decode(Response.self, from: data).choices.first?.message.content, !content.isEmpty else { throw GroqError.malformedResponse }
-        return content
+        struct Response: Decodable {
+            struct Choice: Decodable {
+                struct Message: Decodable { let content: String? }
+                let message: Message
+                let finishReason: String?
+
+                enum CodingKeys: String, CodingKey { case message; case finishReason = "finish_reason" }
+            }
+            let choices: [Choice]
+        }
+        let response: Response
+        do { response = try JSONDecoder().decode(Response.self, from: data) }
+        catch { throw GroqError.malformedResponse }
+        guard let choice = response.choices.first else { throw GroqError.malformedResponse }
+        return ChatChoice(content: choice.message.content, finishReason: choice.finishReason)
+    }
+
+    private struct ChatChoice {
+        let content: String?
+        let finishReason: String?
     }
 
     func transcribe(fileURL: URL, apiKey: String) async throws -> GroqTranscriptPayload {

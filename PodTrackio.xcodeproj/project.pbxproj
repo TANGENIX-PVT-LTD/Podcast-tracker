@@ -7,9 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00DB2F4063ABD50FCC49757F /* QuirkyResponseDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4BDA7D4809F05E06852419 /* QuirkyResponseDocument.swift */; };
+		01A178D7F71528FDDD9A16F2 /* YouTubeVideoMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E0F91AA562B870D694FEB98 /* YouTubeVideoMetadata.swift */; };
 		0902C405D8CFDF3DDBAA8829 /* GoalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F159F2483E4968A5943CB64A /* GoalsView.swift */; };
 		0EE9EF0E566B75C1E1E25C11 /* PodcastSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 083A9178B1B20C990A84F479 /* PodcastSummary.swift */; };
 		0F2AFD7208CE9FB240223E3B /* ProgressionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC3911EC5364841D5736F75E /* ProgressionEngine.swift */; };
+		1025224D3003DF5242FDE944 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 3A2AD9E86C9F86023C3D20AF /* index.html */; };
 		106F6217D7C197C37B7D174D /* PodcastTrackerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4B513C408CA494A1B074332 /* PodcastTrackerApp.swift */; };
 		1975B3340600D9A47D3E77B4 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4417449F624AF05BA465D3 /* SettingsView.swift */; };
 		1AC558C6C7AA09EA81DBB9FC /* NativePlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECF217A7027E5E5CDF09D9D1 /* NativePlayerView.swift */; };
@@ -26,21 +29,30 @@
 		3CD17D13489631BA6ABDDA31 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 82F43BAEB849F8264DA79BCD /* Assets.xcassets */; };
 		3CE178D77F984E334C7C7FCB /* LearningActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5652070F6545AF86797FED9F /* LearningActivity.swift */; };
 		46AD6AC666A1E6C0594EE70D /* GroqClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472A29BB2E3A62B305C848E7 /* GroqClient.swift */; };
+		4C34AF9595CAA0EE240FA2F6 /* d3.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 58D0DA9EFEF44C17E790A8CC /* d3.min.js */; };
 		513711F0D99DF2E110330169 /* UserStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F6692553DC33D852C39A9F /* UserStats.swift */; };
+		51B60E0DD23E6DAEA85CE976 /* BrainCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B73BAA7C23D2B18E00C63FA2 /* BrainCanvasView.swift */; };
 		5288DB938CE91F3328BD9F04 /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB4AFC6607DC16D2752FB03 /* NotificationManager.swift */; };
+		5649F9AFB47F6E2AB67C93AC /* BrainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF07A469940CDC0B3FACA90 /* BrainView.swift */; };
 		5D079830025731C247A529C4 /* DistributionChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AB511986DAD78BE09C3E66 /* DistributionChannel.swift */; };
 		60CE7C9AD2071DE5B36BFE77 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF8086F8FB1FD5A5278A60B /* LoginView.swift */; };
+		65C0B00E26E0BAB9B1875D15 /* BrainKnowledge.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFED4B87967736ED0B0F7F69 /* BrainKnowledge.swift */; };
 		6A8C4E52300AF24CAB92DF3E /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D879AACC1D2A344CAFDFD0DB /* LibraryView.swift */; };
 		7304BD91DD6D60E1940C0B93 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE42C73DFAFCF60BDF7E370 /* DashboardView.swift */; };
 		7D35B39363776CCBDFF6E7D4 /* DataManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48D8C2FC31E8EBA6F1746BA9 /* DataManager.swift */; };
 		850B317F94BB6205C4BB76F7 /* Achievement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C945F3E335420766E3BDB8E2 /* Achievement.swift */; };
 		9002C62C42CB610E61F47CA9 /* SummaryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8EF49FFC6510F41AF760AAD /* SummaryCoordinator.swift */; };
+		934904D162B72C9E4F6FBEA8 /* BrainRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50F624FE48589E10C9E981CE /* BrainRequest.swift */; };
 		93732F0F999C14C1EB8ADCE6 /* MenuBarLearningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0052AB41F297E198F87747F /* MenuBarLearningView.swift */; };
 		9587F4FE41371DC26A0A68E1 /* DownloadModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8604A67A7ACC1EC7FC69401 /* DownloadModels.swift */; };
 		96F7D876A02A2F7CF5C5D464 /* AchievementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C1714CE40FD15E4B6648E2 /* AchievementsView.swift */; };
+		9B55B1B87605173FC0793C5F /* PodTrackio.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0BA2AE02751688E329BF3254 /* PodTrackio.icon */; };
 		9C736A688CE234269BF80297 /* RescueInsights.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00050B456481CBC3862C0CDE /* RescueInsights.swift */; };
 		AD7ECF517F419862E14C9B55 /* PlaylistImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD6DFFB2E1B447C749C5183C /* PlaylistImporter.swift */; };
 		BA4851E1741C5DE6D209D2A2 /* LaunchAtLoginController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27290BC18A1D5977C06D6D8D /* LaunchAtLoginController.swift */; };
+		BE857593358FD48E21756F2D /* D3-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = E842526C05948FCE667D733E /* D3-LICENSE.txt */; };
+		C1784EF245770936C7C304FA /* BrainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 784C64E1FB587A5B3EF29A93 /* BrainStore.swift */; };
+		C67780D9EDF2B75BF96F8491 /* BrainTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF869E97398E8814FFAC8593 /* BrainTests.swift */; };
 		C722D071BCD23FD85AA657EE /* QuirkyChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B29FACCDCE88DD282922E13 /* QuirkyChatMessage.swift */; };
 		C8559155DB89AD9D76F85308 /* PodcastCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4AA9F18292C7963C5CFD8AB /* PodcastCollection.swift */; };
 		D376ED6F4494CF908DD2A154 /* LearningCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A33C700F21A9E92FEF28E633 /* LearningCategory.swift */; };
@@ -48,6 +60,7 @@
 		D67A832556B68EDCD5F108E6 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059E2B77EE9EBB90D0B9AE7A /* AppTheme.swift */; };
 		D953C6594FA2F927F01496EC /* YouTubeTranscript in Frameworks */ = {isa = PBXBuildFile; productRef = 393FC9CCE2708372DAD21E9D /* YouTubeTranscript */; };
 		DF517C531DFA960D808384FD /* PlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7FA7CC16784A9592112DA5 /* PlayerController.swift */; };
+		E38D1A8BBBCFAA4808F8F388 /* canvas.js in Resources */ = {isa = PBXBuildFile; fileRef = 19E6B5D95088C20A0562BA7C /* canvas.js */; };
 		E41FA2D60B10BC1DE5026228 /* PodcastTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A23979631D9C6D87BF83C9C5 /* PodcastTrackerTests.swift */; };
 		E48F07EA04D52C52EA7492C7 /* logo.png in Resources */ = {isa = PBXBuildFile; fileRef = 1F2973C3D2633E007E9F03D2 /* logo.png */; };
 		EF963812F52DC8AC3EE4F396 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEF1B5801E28BC409797625A /* KeychainStore.swift */; };
@@ -79,30 +92,41 @@
 		083A9178B1B20C990A84F479 /* PodcastSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastSummary.swift; sourceTree = "<group>"; };
 		0A9AB6CD13EE59D3E619C116 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		0B29FACCDCE88DD282922E13 /* QuirkyChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuirkyChatMessage.swift; sourceTree = "<group>"; };
+		0BA2AE02751688E329BF3254 /* PodTrackio.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = PodTrackio.icon; sourceTree = "<group>"; };
 		0F7EBC62008125E7B58A4D5B /* PodTrackio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PodTrackio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		19E6B5D95088C20A0562BA7C /* canvas.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = canvas.js; sourceTree = "<group>"; };
 		1F2973C3D2633E007E9F03D2 /* logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = logo.png; sourceTree = "<group>"; };
 		27290BC18A1D5977C06D6D8D /* LaunchAtLoginController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginController.swift; sourceTree = "<group>"; };
 		2757B32FD92F091C7DD050F9 /* YouTubeWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeWebView.swift; sourceTree = "<group>"; };
 		29444AC1EFFB98244DE8D208 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		31682930163AAC1847369C81 /* YouTubeStreamResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeStreamResolver.swift; sourceTree = "<group>"; };
 		325D3510807C676046D75BAA /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
+		3A2AD9E86C9F86023C3D20AF /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
+		3D4BDA7D4809F05E06852419 /* QuirkyResponseDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuirkyResponseDocument.swift; sourceTree = "<group>"; };
 		472A29BB2E3A62B305C848E7 /* GroqClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroqClient.swift; sourceTree = "<group>"; };
 		4843236BCA2A2C3DFAEC1A69 /* TranscriptAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptAPIClient.swift; sourceTree = "<group>"; };
 		48D8C2FC31E8EBA6F1746BA9 /* DataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManager.swift; sourceTree = "<group>"; };
 		4FE42C73DFAFCF60BDF7E370 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		50F624FE48589E10C9E981CE /* BrainRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainRequest.swift; sourceTree = "<group>"; };
 		5652070F6545AF86797FED9F /* LearningActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningActivity.swift; sourceTree = "<group>"; };
+		58D0DA9EFEF44C17E790A8CC /* d3.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = d3.min.js; sourceTree = "<group>"; };
 		5CB4AFC6607DC16D2752FB03 /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		6A0E62C9D37958BC89004823 /* LocalAuthCallbackServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalAuthCallbackServer.swift; sourceTree = "<group>"; };
+		6BF07A469940CDC0B3FACA90 /* BrainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainView.swift; sourceTree = "<group>"; };
+		784C64E1FB587A5B3EF29A93 /* BrainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainStore.swift; sourceTree = "<group>"; };
 		7B1A480F3CF82D3985FF1DF5 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		808CB43E69069803563D408F /* SchedulePodcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchedulePodcastSheet.swift; sourceTree = "<group>"; };
 		82F43BAEB849F8264DA79BCD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8E0F91AA562B870D694FEB98 /* YouTubeVideoMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoMetadata.swift; sourceTree = "<group>"; };
 		9A4839C0FCD1DADF800B211B /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
 		A19E0DA9000201B0DF32C759 /* NotificationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPreferences.swift; sourceTree = "<group>"; };
 		A23979631D9C6D87BF83C9C5 /* PodcastTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastTrackerTests.swift; sourceTree = "<group>"; };
 		A33C700F21A9E92FEF28E633 /* LearningCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningCategory.swift; sourceTree = "<group>"; };
 		AE98F9A010DBA46AC3710702 /* AddPodcastSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPodcastSheet.swift; sourceTree = "<group>"; };
+		AF869E97398E8814FFAC8593 /* BrainTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainTests.swift; sourceTree = "<group>"; };
 		B4AA9F18292C7963C5CFD8AB /* PodcastCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastCollection.swift; sourceTree = "<group>"; };
 		B5F6692553DC33D852C39A9F /* UserStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserStats.swift; sourceTree = "<group>"; };
+		B73BAA7C23D2B18E00C63FA2 /* BrainCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainCanvasView.swift; sourceTree = "<group>"; };
 		B7A2329A47FB4EF75BB053D8 /* DistractionPattern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DistractionPattern.swift; sourceTree = "<group>"; };
 		B9C6D0B939BF1B67593F8E1B /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
 		BAF8086F8FB1FD5A5278A60B /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -111,10 +135,12 @@
 		BD6DFFB2E1B447C749C5183C /* PlaylistImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImporter.swift; sourceTree = "<group>"; };
 		C4FDEAA505B4EBFC7A1D7A37 /* PodTrackioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PodTrackioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C945F3E335420766E3BDB8E2 /* Achievement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Achievement.swift; sourceTree = "<group>"; };
+		CFED4B87967736ED0B0F7F69 /* BrainKnowledge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainKnowledge.swift; sourceTree = "<group>"; };
 		D4C1714CE40FD15E4B6648E2 /* AchievementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsView.swift; sourceTree = "<group>"; };
 		D879AACC1D2A344CAFDFD0DB /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		DC06210EB3BAFDE5DE902418 /* Podcast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Podcast.swift; sourceTree = "<group>"; };
 		DEF1B5801E28BC409797625A /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		E842526C05948FCE667D733E /* D3-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "D3-LICENSE.txt"; sourceTree = "<group>"; };
 		E8604A67A7ACC1EC7FC69401 /* DownloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadModels.swift; sourceTree = "<group>"; };
 		E8EF49FFC6510F41AF760AAD /* SummaryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryCoordinator.swift; sourceTree = "<group>"; };
 		ECB9DED3A66FAD5CFCE2A520 /* LocalMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMediaStore.swift; sourceTree = "<group>"; };
@@ -139,10 +165,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1C2236745EA122BFCDF47964 /* BrainCanvas */ = {
+			isa = PBXGroup;
+			children = (
+				19E6B5D95088C20A0562BA7C /* canvas.js */,
+				E842526C05948FCE667D733E /* D3-LICENSE.txt */,
+				58D0DA9EFEF44C17E790A8CC /* d3.min.js */,
+				3A2AD9E86C9F86023C3D20AF /* index.html */,
+			);
+			path = BrainCanvas;
+			sourceTree = "<group>";
+		};
 		296C648C191F9A3461A46F4D /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 				1F2973C3D2633E007E9F03D2 /* logo.png */,
+				1C2236745EA122BFCDF47964 /* BrainCanvas */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -166,6 +204,8 @@
 			children = (
 				C945F3E335420766E3BDB8E2 /* Achievement.swift */,
 				059E2B77EE9EBB90D0B9AE7A /* AppTheme.swift */,
+				CFED4B87967736ED0B0F7F69 /* BrainKnowledge.swift */,
+				50F624FE48589E10C9E981CE /* BrainRequest.swift */,
 				B7A2329A47FB4EF75BB053D8 /* DistractionPattern.swift */,
 				E8604A67A7ACC1EC7FC69401 /* DownloadModels.swift */,
 				0053409E343989C439BC6891 /* FocusCommitment.swift */,
@@ -177,6 +217,7 @@
 				083A9178B1B20C990A84F479 /* PodcastSummary.swift */,
 				BC3911EC5364841D5736F75E /* ProgressionEngine.swift */,
 				0B29FACCDCE88DD282922E13 /* QuirkyChatMessage.swift */,
+				3D4BDA7D4809F05E06852419 /* QuirkyResponseDocument.swift */,
 				00050B456481CBC3862C0CDE /* RescueInsights.swift */,
 				B5F6692553DC33D852C39A9F /* UserStats.swift */,
 			);
@@ -204,6 +245,7 @@
 			isa = PBXGroup;
 			children = (
 				D4C1714CE40FD15E4B6648E2 /* AchievementsView.swift */,
+				6BF07A469940CDC0B3FACA90 /* BrainView.swift */,
 				4FE42C73DFAFCF60BDF7E370 /* DashboardView.swift */,
 				F159F2483E4968A5943CB64A /* GoalsView.swift */,
 				D879AACC1D2A344CAFDFD0DB /* LibraryView.swift */,
@@ -232,6 +274,8 @@
 			isa = PBXGroup;
 			children = (
 				FAE6DC2EEB572A73931A6F4B /* AuthManager.swift */,
+				B73BAA7C23D2B18E00C63FA2 /* BrainCanvasView.swift */,
+				784C64E1FB587A5B3EF29A93 /* BrainStore.swift */,
 				48D8C2FC31E8EBA6F1746BA9 /* DataManager.swift */,
 				04AB511986DAD78BE09C3E66 /* DistributionChannel.swift */,
 				29444AC1EFFB98244DE8D208 /* Extensions.swift */,
@@ -248,6 +292,7 @@
 				7B1A480F3CF82D3985FF1DF5 /* SupabaseClient.swift */,
 				4843236BCA2A2C3DFAEC1A69 /* TranscriptAPIClient.swift */,
 				31682930163AAC1847369C81 /* YouTubeStreamResolver.swift */,
+				8E0F91AA562B870D694FEB98 /* YouTubeVideoMetadata.swift */,
 			);
 			path = Helpers;
 			sourceTree = "<group>";
@@ -255,6 +300,7 @@
 		D0D444C2EB30C4E66B0354ED = {
 			isa = PBXGroup;
 			children = (
+				0BA2AE02751688E329BF3254 /* PodTrackio.icon */,
 				6D2855A39D95E211ECA21A06 /* AppStore */,
 				66E8A9F37E9CF410237BD12F /* PodcastTracker */,
 				E578365C4EB3E50A043C6AF6 /* PodcastTrackerTests */,
@@ -265,6 +311,7 @@
 		E578365C4EB3E50A043C6AF6 /* PodcastTrackerTests */ = {
 			isa = PBXGroup;
 			children = (
+				AF869E97398E8814FFAC8593 /* BrainTests.swift */,
 				A23979631D9C6D87BF83C9C5 /* PodcastTrackerTests.swift */,
 			);
 			name = PodcastTrackerTests;
@@ -370,6 +417,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				3CD17D13489631BA6ABDDA31 /* Assets.xcassets in Resources */,
+				BE857593358FD48E21756F2D /* D3-LICENSE.txt in Resources */,
+				9B55B1B87605173FC0793C5F /* PodTrackio.icon in Resources */,
+				E38D1A8BBBCFAA4808F8F388 /* canvas.js in Resources */,
+				4C34AF9595CAA0EE240FA2F6 /* d3.min.js in Resources */,
+				1025224D3003DF5242FDE944 /* index.html in Resources */,
 				E48F07EA04D52C52EA7492C7 /* logo.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -387,6 +439,11 @@
 				D67A832556B68EDCD5F108E6 /* AppTheme.swift in Sources */,
 				38F4B3B8E9A6AFF1C13F75DC /* AppViewModel.swift in Sources */,
 				FA6078422B41B9BF21CFF90F /* AuthManager.swift in Sources */,
+				51B60E0DD23E6DAEA85CE976 /* BrainCanvasView.swift in Sources */,
+				65C0B00E26E0BAB9B1875D15 /* BrainKnowledge.swift in Sources */,
+				934904D162B72C9E4F6FBEA8 /* BrainRequest.swift in Sources */,
+				C1784EF245770936C7C304FA /* BrainStore.swift in Sources */,
+				5649F9AFB47F6E2AB67C93AC /* BrainView.swift in Sources */,
 				7304BD91DD6D60E1940C0B93 /* DashboardView.swift in Sources */,
 				7D35B39363776CCBDFF6E7D4 /* DataManager.swift in Sources */,
 				F25AE8EB9C53AC362B6BE075 /* DistractionPattern.swift in Sources */,
@@ -419,6 +476,7 @@
 				106F6217D7C197C37B7D174D /* PodcastTrackerApp.swift in Sources */,
 				0F2AFD7208CE9FB240223E3B /* ProgressionEngine.swift in Sources */,
 				C722D071BCD23FD85AA657EE /* QuirkyChatMessage.swift in Sources */,
+				00DB2F4063ABD50FCC49757F /* QuirkyResponseDocument.swift in Sources */,
 				9C736A688CE234269BF80297 /* RescueInsights.swift in Sources */,
 				F1A24D93139B951119BA79DC /* SchedulePodcastSheet.swift in Sources */,
 				1975B3340600D9A47D3E77B4 /* SettingsView.swift in Sources */,
@@ -427,6 +485,7 @@
 				FC636D4902CE6EAE7BF308AD /* TranscriptAPIClient.swift in Sources */,
 				513711F0D99DF2E110330169 /* UserStats.swift in Sources */,
 				39102FAF987B59A8B536C65C /* YouTubeStreamResolver.swift in Sources */,
+				01A178D7F71528FDDD9A16F2 /* YouTubeVideoMetadata.swift in Sources */,
 				D5AF59FF559F698B826F450C /* YouTubeWebView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -435,6 +494,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C67780D9EDF2B75BF96F8491 /* BrainTests.swift in Sources */,
 				E41FA2D60B10BC1DE5026228 /* PodcastTrackerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -453,7 +513,7 @@
 		9E468AADF2AC321F620EDF46 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = PodTrackio;
 				CODE_SIGN_ENTITLEMENTS = AppStore/PodTrackio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -530,6 +590,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -545,7 +606,7 @@
 		C34AB785C52DACC333FC1EFF /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = PodTrackio;
 				CODE_SIGN_ENTITLEMENTS = AppStore/PodTrackio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -656,6 +717,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;

@@ -7,6 +7,7 @@ struct SettingsView: View {
         ZStack {
             ThemeBackdrop()
             TabView {
+                BrainSettingsView().tabItem { Label("Memory", systemImage: "brain") }
                 AppearanceSettingsView().tabItem { Label("Appearance", systemImage: "paintpalette") }
                 HabitSettingsView().tabItem { Label("Habits", systemImage: "target") }
                 NotificationSettingsView().tabItem { Label("Notifications", systemImage: "bell") }

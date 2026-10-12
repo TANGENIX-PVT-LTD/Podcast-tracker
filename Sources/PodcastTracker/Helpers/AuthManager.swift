@@ -3,21 +3,37 @@ import SwiftUI
 import AuthenticationServices
 import CryptoKit
 import Security
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 // MARK: - Presentation Context Provider
 
-/// Provides the presentation anchor for ASWebAuthenticationSession on macOS.
+/// Provides the correct presentation anchor on every Apple platform.
 private final class AuthPresentationContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding, @unchecked Sendable {
     @MainActor
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        #if os(macOS)
         return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
+        #else
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        if let window = scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.flatMap(\.windows).first {
+            return window
+        }
+        guard let scene = scenes.first else {
+            preconditionFailure("PodTrackio needs an active window scene to present authentication.")
+        }
+        return UIWindow(windowScene: scene)
+        #endif
     }
 }
 
 // MARK: - AuthManager
 
 /// Manages user authentication via Supabase (Google & Apple OAuth).
-/// Uses ASWebAuthenticationSession for the OAuth flow and persists sessions in UserDefaults.
+/// Uses native Apple authorization plus ASWebAuthenticationSession for OAuth and stores tokens in Keychain.
 @MainActor
 final class AuthManager: ObservableObject {
     static let shared = AuthManager()
@@ -33,14 +49,14 @@ final class AuthManager: ObservableObject {
     @Published var refreshToken: String?
     @Published private(set) var isSigningIn = false
     @Published private(set) var authErrorMessage: String?
+    @Published private(set) var isRestoringSession = true
 
     // MARK: - Constants
 
     private let supabaseURL = URL(string: "https://flioaadbuwrpzmoyqypo.supabase.co")!
     private let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZsaW9hYWRidXdycHptb3lxeXBvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5ODM4NTgsImV4cCI6MjEwMjU1OTg1OH0.ixV2gCaGGMA_ZU6UgS4AaD_Ifn3GyoZaK9rKgIxAM1A"
-    // NOTE: We do NOT send redirect_to — Supabase falls back to its Site URL (localhost:3000).
-    // A LocalAuthCallbackServer runs on port 3000 and serves a page that redirects
-    // the browser to podtrackio://auth-callback, which ASWebAuthenticationSession intercepts.
+    // The custom callback is shared by native iOS and macOS builds. The macOS loopback
+    // listener remains available only as a compatibility fallback for older hosted settings.
 
     // MARK: - UserDefaults Keys
 
@@ -57,8 +73,10 @@ final class AuthManager: ObservableObject {
 
     /// Strong reference to the presentation context provider so it isn't deallocated during the session.
     private let presentationContextProvider: AuthPresentationContextProvider
-    /// Local HTTP server that captures Supabase's localhost:3000 redirect.
+    #if os(macOS)
+    /// Legacy loopback support for installed macOS builds whose hosted redirect allow-list has not migrated yet.
     private let localAuthServer: LocalAuthCallbackServer
+    #endif
     /// Keep the browser session alive until Google OAuth completes.
     private var webAuthSession: ASWebAuthenticationSession?
     /// The unhashed nonce sent to Supabase after Apple returns its identity token.
@@ -68,12 +86,22 @@ final class AuthManager: ObservableObject {
 
     private init() {
         self.presentationContextProvider = AuthPresentationContextProvider()
+        #if os(macOS)
         self.localAuthServer = LocalAuthCallbackServer()
+        #endif
         restoreSession()
         if refreshToken != nil {
-            Task { await refreshAccessToken() }
+            Task {
+                _ = await refreshAccessToken()
+                isRestoringSession = false
+            }
         } else if accessToken != nil {
-            Task { await fetchUser() }
+            Task {
+                await fetchUser()
+                isRestoringSession = false
+            }
+        } else {
+            isRestoringSession = false
         }
     }
 
@@ -143,10 +171,9 @@ final class AuthManager: ObservableObject {
             return
         }
 
-        // Do NOT include redirect_to — Supabase will use its configured Site URL
-        // (http://localhost:3000) which our LocalAuthCallbackServer intercepts.
         components.queryItems = [
-            URLQueryItem(name: "provider", value: provider)
+            URLQueryItem(name: "provider", value: provider),
+            URLQueryItem(name: "redirect_to", value: "podtrackio://auth-callback")
         ]
 
         guard let authURL = components.url else {
@@ -154,14 +181,10 @@ final class AuthManager: ObservableObject {
             return
         }
 
-        // Start local server BEFORE opening the browser so port 3000 is ready.
-        localAuthServer.start()
-
-        let localServer = self.localAuthServer
+        prepareOAuthCallback()
         let completion: @Sendable (URL?, (any Error)?) -> Void = { [weak self] callbackURL, error in
             Task { @MainActor [weak self] in
-                // Always stop the local server after the flow completes.
-                localServer.stop()
+                self?.finishOAuthCallback()
                 self?.webAuthSession = nil
 
                 if let error {
@@ -185,7 +208,11 @@ final class AuthManager: ObservableObject {
                 }
 
                 guard let self else { return }
-                self.parseTokensFromFragment(url: callbackURL)
+                guard self.acceptCallback(callbackURL) else {
+                    self.authErrorMessage = "The sign-in response was incomplete. Please try again."
+                    self.isSigningIn = false
+                    return
+                }
                 await self.fetchUser()
                 self.isSigningIn = false
             }
@@ -202,10 +229,23 @@ final class AuthManager: ObservableObject {
         webAuthSession = session
         if !session.start() {
             webAuthSession = nil
-            localAuthServer.stop()
+            finishOAuthCallback()
             isSigningIn = false
             authErrorMessage = "The sign-in window could not be opened. Please try again."
         }
+    }
+
+    private func prepareOAuthCallback() {
+        #if os(macOS)
+        // Kept as a fallback for older hosted auth settings. The explicit custom-scheme redirect is preferred.
+        localAuthServer.start()
+        #endif
+    }
+
+    private func finishOAuthCallback() {
+        #if os(macOS)
+        localAuthServer.stop()
+        #endif
     }
 
     // MARK: - Native Sign in with Apple
@@ -368,38 +408,43 @@ final class AuthManager: ObservableObject {
 
     /// Called from `.onOpenURL` to handle the `podtrackio://auth-callback` redirect.
     func handleCallback(url: URL) {
-        parseTokensFromFragment(url: url)
-        Task { await fetchUser() }
+        guard url.scheme?.lowercased() == "podtrackio", url.host?.lowercased() == "auth-callback" else { return }
+        isSigningIn = true
+        guard acceptCallback(url) else {
+            isSigningIn = false
+            authErrorMessage = "The sign-in response was incomplete. Please try again."
+            return
+        }
+        Task {
+            await fetchUser()
+            isSigningIn = false
+        }
     }
 
     // MARK: - Token Parsing
 
     /// Extracts `access_token` and `refresh_token` from the URL fragment.
-    private func parseTokensFromFragment(url: URL) {
-        // The fragment comes after '#' and is formatted like query parameters:
-        // access_token=...&refresh_token=...&...
-        guard let fragment = url.fragment else {
-            print("⚠️ AuthManager: No fragment in callback URL")
-            return
+    @discardableResult
+    private func acceptCallback(_ url: URL) -> Bool {
+        let encodedParameters = url.fragment ?? url.query ?? ""
+        let items = URLComponents(string: "podtrackio://auth-callback?\(encodedParameters)")?.queryItems ?? []
+        let parameters = Dictionary(uniqueKeysWithValues: items.compactMap { item in
+            item.value.map { (item.name, $0) }
+        })
+        if let error = parameters["error_description"] ?? parameters["error"] {
+            authErrorMessage = error.replacingOccurrences(of: "+", with: " ")
+            return false
         }
-
-        let params = fragment
-            .split(separator: "&")
-            .reduce(into: [String: String]()) { result, pair in
-                let parts = pair.split(separator: "=", maxSplits: 1)
-                if parts.count == 2 {
-                    result[String(parts[0])] = String(parts[1])
-                }
-            }
-
-        if let token = params["access_token"] {
-            self.accessToken = token
+        guard let newAccessToken = parameters["access_token"],
+              let newRefreshToken = parameters["refresh_token"],
+              !newAccessToken.isEmpty,
+              !newRefreshToken.isEmpty else {
+            return false
         }
-        if let refresh = params["refresh_token"] {
-            self.refreshToken = refresh
-        }
-
+        accessToken = newAccessToken
+        refreshToken = newRefreshToken
         persistSession()
+        return true
     }
 
     // MARK: - Token Refresh
@@ -528,6 +573,7 @@ final class AuthManager: ObservableObject {
         refreshToken = nil
         authErrorMessage = nil
         isSigningIn = false
+        isRestoringSession = false
         appleRawNonce = nil
 
         // Clear persisted session
@@ -538,6 +584,7 @@ final class AuthManager: ObservableObject {
         defaults.removeObject(forKey: Keys.email)
         defaults.removeObject(forKey: Keys.displayName)
         defaults.removeObject(forKey: Keys.avatarURL)
+        try? KeychainStore.removeAuthSession()
 
         // Notify Supabase (fire-and-forget)
         if let token {
@@ -558,8 +605,11 @@ final class AuthManager: ObservableObject {
     /// Saves the current session to UserDefaults.
     func persistSession() {
         let defaults = UserDefaults.standard
-        defaults.set(accessToken, forKey: Keys.accessToken)
-        defaults.set(refreshToken, forKey: Keys.refreshToken)
+        if let accessToken, let refreshToken {
+            try? KeychainStore.saveAuthSession(accessToken: accessToken, refreshToken: refreshToken)
+        }
+        defaults.removeObject(forKey: Keys.accessToken)
+        defaults.removeObject(forKey: Keys.refreshToken)
         defaults.set(userId?.uuidString, forKey: Keys.userId)
         defaults.set(email, forKey: Keys.email)
         defaults.set(displayName, forKey: Keys.displayName)
@@ -569,8 +619,18 @@ final class AuthManager: ObservableObject {
     /// Restores a previously saved session from UserDefaults.
     func restoreSession() {
         let defaults = UserDefaults.standard
-        accessToken = defaults.string(forKey: Keys.accessToken)
-        refreshToken = defaults.string(forKey: Keys.refreshToken)
+        // One-time migration from the original UserDefaults storage into Keychain.
+        let legacyAccess = defaults.string(forKey: Keys.accessToken)
+        let legacyRefresh = defaults.string(forKey: Keys.refreshToken)
+        if KeychainStore.authAccessToken() == nil,
+           let legacyAccess,
+           let legacyRefresh {
+            try? KeychainStore.saveAuthSession(accessToken: legacyAccess, refreshToken: legacyRefresh)
+        }
+        defaults.removeObject(forKey: Keys.accessToken)
+        defaults.removeObject(forKey: Keys.refreshToken)
+        accessToken = KeychainStore.authAccessToken()
+        refreshToken = KeychainStore.authRefreshToken()
         email = defaults.string(forKey: Keys.email)
         displayName = defaults.string(forKey: Keys.displayName)
         avatarURL = defaults.string(forKey: Keys.avatarURL)
