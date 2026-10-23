@@ -31,6 +31,14 @@ struct PodTrackioWidgetSnapshot: Codable, Equatable, Sendable {
     var focusMinutesRemaining: Int? = nil
     var focusTargetMinutes: Int? = nil
     var gems: Int = 0
+    /// Monday-first week: done, frozen, missed, today, todayDone, future.
+    var weekStates: [String] = []
+    var freezes: Int = 2
+    var questsDone: Int = 0
+    var levelNumber: Int = 1
+    var levelProgress: Double = 0
+    var nextEpisodeResumeLabel: String? = nil
+    var hasThumbnail: Bool = false
 
     private var todayKey: String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
@@ -50,12 +58,35 @@ struct PodTrackioWidgetSnapshot: Codable, Equatable, Sendable {
     var dailyProgress: Double {
         min(max(Double(currentWatchedMinutes) / Double(max(dailyGoalMinutes, 1)), 0), 1)
     }
+
+    var remainingMinutes: Int { max(0, dailyGoalMinutes - currentWatchedMinutes) }
+
+    var currentQuestsDone: Int { snapshotDay == todayKey ? questsDone : 0 }
+
+    /// After 6pm with a live, unprotected streak. Evaluated per timeline entry, so the widget turns worried on its own.
+    func atRisk(at date: Date) -> Bool {
+        !protectedToday && currentStreak > 0 && Calendar.current.component(.hour, from: date) >= 18
+    }
+
+    /// Week states shifted correctly even if the snapshot is from an earlier day this week.
+    var currentWeekStates: [String] {
+        guard weekStates.count == 7 else { return Array(repeating: "future", count: 7) }
+        guard snapshotDay != todayKey else { return weekStates }
+        let todayIndex = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
+        return weekStates.enumerated().map { index, state in
+            if index == todayIndex { return "today" }
+            if state == "today" { return index < todayIndex ? "missed" : "future" }
+            if state == "todayDone" { return "done" }
+            return state
+        }
+    }
 }
 
 extension PodTrackioWidgetSnapshot {
     enum CodingKeys: String, CodingKey {
         case todayWatchedMinutes, dailyGoalMinutes, currentStreak, totalXP, levelTitle, libraryCount, completedCount
         case nextEpisodeID, nextEpisodeTitle, nextEpisodeProgress, snapshotDay, streakProtected, focusBlocksRemaining, focusTargetBlocks, focusMinutesRemaining, focusTargetMinutes, gems
+        case weekStates, freezes, questsDone, levelNumber, levelProgress, nextEpisodeResumeLabel, hasThumbnail
     }
 
     init(from decoder: Decoder) throws {
@@ -70,13 +101,25 @@ extension PodTrackioWidgetSnapshot {
             focusBlocksRemaining: try c.decodeIfPresent(Int.self, forKey: .focusBlocksRemaining), focusTargetBlocks: try c.decodeIfPresent(Int.self, forKey: .focusTargetBlocks),
             focusMinutesRemaining: try c.decodeIfPresent(Int.self, forKey: .focusMinutesRemaining),
             focusTargetMinutes: try c.decodeIfPresent(Int.self, forKey: .focusTargetMinutes),
-            gems: try c.decodeIfPresent(Int.self, forKey: .gems) ?? 0)
+            gems: try c.decodeIfPresent(Int.self, forKey: .gems) ?? 0,
+            weekStates: try c.decodeIfPresent([String].self, forKey: .weekStates) ?? [],
+            freezes: try c.decodeIfPresent(Int.self, forKey: .freezes) ?? 2,
+            questsDone: try c.decodeIfPresent(Int.self, forKey: .questsDone) ?? 0,
+            levelNumber: try c.decodeIfPresent(Int.self, forKey: .levelNumber) ?? 1,
+            levelProgress: try c.decodeIfPresent(Double.self, forKey: .levelProgress) ?? 0,
+            nextEpisodeResumeLabel: try c.decodeIfPresent(String.self, forKey: .nextEpisodeResumeLabel),
+            hasThumbnail: try c.decodeIfPresent(Bool.self, forKey: .hasThumbnail) ?? false)
     }
 }
 
 enum PodTrackioWidgetSnapshotStore {
     static let appGroupID = "group.com.tangenix.podtrackio"
     private static let snapshotKey = "podtrackio.widget.snapshot.v1"
+
+    /// The next episode's thumbnail, cached by the app so widgets can show it without network access.
+    static var thumbnailURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?.appendingPathComponent("widget-next-thumbnail.jpg")
+    }
 
     static func load() -> PodTrackioWidgetSnapshot {
         guard let defaults = UserDefaults(suiteName: appGroupID),

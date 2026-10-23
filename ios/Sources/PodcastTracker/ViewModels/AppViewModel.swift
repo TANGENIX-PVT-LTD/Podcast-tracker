@@ -359,6 +359,12 @@ final class AppViewModel: ObservableObject {
         updateWidgetSnapshot()
     }
 
+    /// "21:00" / "1:04:30", the timecode the player shows.
+    private static func clock(_ seconds: Double) -> String {
+        let t = Int(seconds), h = t / 3600, m = (t % 3600) / 60, s = t % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
     private func updateWidgetSnapshot() {
         let next = nextPodcast
         let snapshot = PodTrackioWidgetSnapshot(
@@ -376,11 +382,19 @@ final class AppViewModel: ObservableObject {
             streakProtected: streakProtectedToday,
             focusMinutesRemaining: FocusModeController.shared.state.enabled ? FocusModeController.shared.state.remainingMinutes : nil,
             focusTargetMinutes: FocusModeController.shared.state.enabled ? Int(FocusModeController.shared.state.dailyTargetSeconds / 60) : nil,
-            gems: habitLoop.gems
+            gems: habitLoop.gems,
+            weekStates: weekStrip.map(\.widgetState),
+            freezes: habitStreakStatus.freezes,
+            questsDone: habitLoop.questCount(on: LearningCalendar.dateKey(for: Date())),
+            levelNumber: stats.currentLevel.number,
+            levelProgress: levelProgress,
+            nextEpisodeResumeLabel: next.map { $0.hasProgress ? "Resume at \(Self.clock($0.lastPlaybackPosition))" : "Ready when you are" },
+            hasThumbnail: WidgetThumbnailCache.hasThumbnail(for: next)
         )
         if PodTrackioWidgetSnapshotStore.save(snapshot) {
             WidgetCenter.shared.reloadAllTimelines()
         }
+        WidgetThumbnailCache.refresh(for: next) { [weak self] in self?.updateWidgetSnapshot() }
     }
 
     func handleAppURL(_ url: URL) {

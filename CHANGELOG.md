@@ -38,6 +38,12 @@ A new app built around habit, motion and feel.
   - Modes: Ask, Quiz me, Connect ideas, Action plan, Recap my week.
   - Tappable citations that open the episode at the quoted moment, and Save as note.
 - **Session complete.** A results screen after five or more minutes of learning, plus a goal ring and "+1 XP" floaters in the player.
+- **iOS widgets.**
+  - Streak (small, medium), where Echo turns worried at 6pm if today isn't protected yet.
+  - Daily Goal ring.
+  - Up Next with full-bleed episode art.
+  - Learning HQ with streak, week, quests and the next episode.
+  - Lock Screen circular, rectangular and inline widgets.
 
 ## 2.0.0: Classic
 

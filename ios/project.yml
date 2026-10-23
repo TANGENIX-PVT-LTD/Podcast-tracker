@@ -68,6 +68,7 @@ targets:
     sources:
       - path: Shared
       - path: Widgets
+      - path: Sources/PodcastTracker/Helpers/Play/Echo/EchoPathParser.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio.widgets

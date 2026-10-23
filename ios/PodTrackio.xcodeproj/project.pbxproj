@@ -50,6 +50,7 @@
 		64F42CFDE9A01878ACD7237E /* UserStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3733502FB64B2DBEA5036A22 /* UserStats.swift */; };
 		6C8449E5BD97E847AA71FFB6 /* FocusDayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885D0CD5ABC6D42421BCB2BF /* FocusDayState.swift */; };
 		6CBE615AB2FD861E31013428 /* StreakFlame.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3130B1E74649941ABF69E78 /* StreakFlame.swift */; };
+		6DAE8B67FB69BE5972BE4002 /* WidgetThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59B312EC416C191EAF278BC3 /* WidgetThumbnailCache.swift */; };
 		6E701C65B95953B88B688A1E /* SummaryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F886C6D8991CF093F189D2AF /* SummaryCoordinator.swift */; };
 		6EAE96C06735ED796F9AB680 /* LearningActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5CF48B1FE462D98C91FFED /* LearningActivity.swift */; };
 		716AC9895DF3AEC56DCA926A /* HabitReminderPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 799B515B257C14E1F634C957 /* HabitReminderPlanner.swift */; };
@@ -71,11 +72,13 @@
 		9A3F518FDEC886AF5D89AA4D /* Podcast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300408240B85F7371B26F0A7 /* Podcast.swift */; };
 		9B55B1B87605173FC0793C5F /* PodTrackio.icon in Resources */ = {isa = PBXBuildFile; fileRef = 0BA2AE02751688E329BF3254 /* PodTrackio.icon */; };
 		9C0C1EA2BD2343710497FE47 /* BrainCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC32BB9702E2D2983A5F164 /* BrainCanvasView.swift */; };
+		9DCB026F26B76157D4ABA31B /* WidgetArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5A6580258325801B2D7CD0 /* WidgetArt.swift */; };
 		9E9670114F4E12CC6562DB3F /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA1F9FC1032DB3B7F2FA159 /* LiquidGlass.swift */; };
 		A41107E91A90E361DBF67A82 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DEFC937FE6F2910A19E2E10 /* AppTheme.swift */; };
 		A72725D7D8E030944B976E2B /* FocusSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A207A92E93F5A82606C2FAEF /* FocusSnapshotStore.swift */; };
 		A7DCB9B6AF5C9AE0BD19DD26 /* ProgressionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A562A558A69812FEFB9C1713 /* ProgressionEngine.swift */; };
 		A841CE9F9E253D9E8B281EA9 /* PlayFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = C048C502F3F0F936EF6F5016 /* PlayFeedback.swift */; };
+		AB5CE2CE78E20D8D59C42C3B /* EchoPathParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D680DAE66DCA7DD3CB240B91 /* EchoPathParser.swift */; };
 		ABEA1175A48B0B8BF8AC3772 /* FocusModeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B20D95E3FB91E2E020B4E6 /* FocusModeController.swift */; };
 		AD5E72EC8C8D17E9767D85B8 /* PlayChoreography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E0674A3DAAB3DC7ECA2BDC /* PlayChoreography.swift */; };
 		AFDC7859B10AD2FF6BEA57D2 /* FocusDayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 885D0CD5ABC6D42421BCB2BF /* FocusDayState.swift */; };
@@ -189,6 +192,7 @@
 		4BE6579DB80F154B21D51CB7 /* PlaylistImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistImporter.swift; sourceTree = "<group>"; };
 		524D728B4E6757AA952A0D31 /* PodcastSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PodcastSummary.swift; sourceTree = "<group>"; };
 		55489EDA87425681B0D05487 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		59B312EC416C191EAF278BC3 /* WidgetThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetThumbnailCache.swift; sourceTree = "<group>"; };
 		61CAAD6405B03FB3DA0B3AEB /* QuirkyChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuirkyChatMessage.swift; sourceTree = "<group>"; };
 		649BFA904A4D56E8263DCE31 /* BrainRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainRequest.swift; sourceTree = "<group>"; };
 		67C49B7A571AB9A326C8FBA9 /* RescueInsights.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RescueInsights.swift; sourceTree = "<group>"; };
@@ -253,6 +257,7 @@
 		FB6BB7CB810A37E5E43C0B95 /* PodTrackioFocusShield.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PodTrackioFocusShield.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		FB94E2E6D84A575CEBDFD1A6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FC320E803D23CA202D318EC1 /* GroqClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroqClient.swift; sourceTree = "<group>"; };
+		FD5A6580258325801B2D7CD0 /* WidgetArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetArt.swift; sourceTree = "<group>"; };
 		FD5CF48B1FE462D98C91FFED /* LearningActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningActivity.swift; sourceTree = "<group>"; };
 		FEA99B20A083E8EB868A4C98 /* DataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -429,6 +434,7 @@
 				FB94E2E6D84A575CEBDFD1A6 /* Info.plist */,
 				B98E81F3B62839E0FFC3EE57 /* PodTrackioWidgets.entitlements */,
 				DCB684882B857C2202FB0E11 /* PodTrackioWidgets.swift */,
+				FD5A6580258325801B2D7CD0 /* WidgetArt.swift */,
 			);
 			path = Widgets;
 			sourceTree = "<group>";
@@ -456,6 +462,7 @@
 				D9D14E177961F309A323BEA8 /* IOSSheets.swift */,
 				379346A8BF85AFC7968CAB2E /* IOSYouTubeWebView.swift */,
 				20D115BE9BB0E1A9EDA9D25D /* PodTrackioIOSApp.swift */,
+				59B312EC416C191EAF278BC3 /* WidgetThumbnailCache.swift */,
 			);
 			name = Sources;
 			path = iOS/Sources;
@@ -741,6 +748,7 @@
 				457BA768FD969C5F9F717AA1 /* SupabaseClient.swift in Sources */,
 				E1F3458E4B124E0DCCE5A627 /* TranscriptAPIClient.swift in Sources */,
 				64F42CFDE9A01878ACD7237E /* UserStats.swift in Sources */,
+				6DAE8B67FB69BE5972BE4002 /* WidgetThumbnailCache.swift in Sources */,
 				274EEAA61E72B2093D538911 /* YouTubeMetadataFetcher.swift in Sources */,
 				DEB03A684119613AF9477E04 /* YouTubeStreamResolver.swift in Sources */,
 			);
@@ -761,8 +769,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB5CE2CE78E20D8D59C42C3B /* EchoPathParser.swift in Sources */,
 				7B312552F3094C242771026D /* PodTrackioWidgetSnapshot.swift in Sources */,
 				D553902AA3DC9B016A7769D5 /* PodTrackioWidgets.swift in Sources */,
+				9DCB026F26B76157D4ABA31B /* WidgetArt.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -820,7 +830,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Widgets/PodTrackioWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -830,7 +840,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tangenix.podtrackio.widgets;
 				PRODUCT_NAME = PodTrackioWidgets;
 				SDKROOT = iphoneos;
@@ -870,7 +880,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Widgets/PodTrackioWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -880,7 +890,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tangenix.podtrackio.widgets;
 				PRODUCT_NAME = PodTrackioWidgets;
 				SDKROOT = iphoneos;
@@ -945,7 +955,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS/PodTrackio.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = iOS/Info.plist;
@@ -954,7 +964,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tangenix.podtrackio;
 				PRODUCT_MODULE_NAME = PodcastTracker;
 				PRODUCT_NAME = PodTrackio;
@@ -1059,7 +1069,7 @@
 				CODE_SIGN_ENTITLEMENTS = iOS/PodTrackio.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = iOS/Info.plist;
@@ -1068,7 +1078,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tangenix.podtrackio;
 				PRODUCT_MODULE_NAME = PodcastTracker;
 				PRODUCT_NAME = PodTrackio;
