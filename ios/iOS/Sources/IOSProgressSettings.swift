@@ -6,83 +6,98 @@ struct IOSProgressView: View {
     let onRescue: () -> Void
     @State private var displayedMonth = Date()
     @State private var showScheduleDay = false
+    @State private var showStreak = false
 
     var body: some View {
-        ZStack {
-            ThemeBackdrop()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: PodSpacing.section) {
-                    overview
-                    goals
-                    calendarCard
-                    rescueReview
-                    IOSAchievementsGrid()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                levelHero
+                IOSSection("Overview") { overview }
+                IOSSection("Goals") { goals }
+                IOSSection("Calendar") { calendarCard }
+                IOSSection("Distraction rescue", accessory: {
+                    Button("Rescue", systemImage: "bolt.fill", action: onRescue)
+                }) { rescueReview }
+                IOSAchievementsGrid()
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+        }
+        .background(Color(.systemBackground))
+        .navigationTitle("Progress")
+        .toolbar { ToolbarItem(placement: .topBarLeading) { IOSStatsBar { showStreak = true } } }
+        .sheet(isPresented: $showScheduleDay) { IOSScheduleDaySheet(day: viewModel.selectedCalendarDate) }
+        .sheet(isPresented: $showStreak) { IOSStreakSheet() }
+    }
+
+    private var levelHero: some View {
+        let level = viewModel.stats.currentLevel
+        let next = Level.levels[min(Level.levels.count - 1, level.number)]
+        return HStack(spacing: 16) {
+            PlayRing(value: viewModel.levelProgress, tint: Play.Palette.gold, lineWidth: 7) {
+                Image(systemName: level.iconName).font(.title2.weight(.bold)).foregroundStyle(Play.Palette.gold)
+            }
+            .frame(width: 72, height: 72)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Level \(level.number)").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+                Text(level.title).font(.title2.bold())
+                if level.xpToNext > 0 {
+                    IOSQuestBar(value: viewModel.levelProgress, label: "\(viewModel.xpToNextLevel) XP to \(next.title)", tint: Play.Palette.gold)
+                } else {
+                    Text("Top level reached").font(.subheadline).foregroundStyle(.secondary)
                 }
-                .padding(PodSpacing.page)
-                .padding(.bottom, 24)
             }
         }
-        .navigationTitle("Progress")
-        .sheet(isPresented: $showScheduleDay) { IOSScheduleDaySheet(day: viewModel.selectedCalendarDate) }
+        .padding(.top, 4)
+        .accessibilityElement(children: .combine)
     }
 
     private var overview: some View {
-        IOSGlassSurface(cornerRadius: 24, tint: .accentColor.opacity(0.1)) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle().stroke(.tertiary.opacity(0.25), lineWidth: 7)
-                    Circle()
-                        .trim(from: 0, to: viewModel.stats.levelProgress)
-                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Image(systemName: viewModel.stats.currentLevel.iconName).font(.title2).foregroundStyle(.tint)
-                }
-                .frame(width: 72, height: 72)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Level \(viewModel.stats.currentLevel.number)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Text(viewModel.stats.currentLevel.title).font(.title2.bold())
-                    Text("\(viewModel.stats.totalXP) total XP · \(viewModel.stats.formattedTotalTime) learned")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
+        Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+            GridRow {
+                IOSStatTile(symbol: "flame.fill", color: Play.Palette.flame, value: "\(viewModel.stats.currentStreak)", label: "Day streak")
+                IOSStatTile(symbol: "trophy.fill", color: Play.Palette.gold, value: "\(viewModel.stats.longestStreak)", label: "Longest streak")
             }
-            .padding(18)
+            GridRow {
+                IOSStatTile(symbol: "bolt.fill", color: Play.Palette.gold, value: "\(viewModel.stats.totalXP)", label: "Total XP")
+                IOSStatTile(symbol: "shield.lefthalf.filled", color: Play.Palette.gem, value: viewModel.habitLeague.title, label: "League")
+            }
+            GridRow {
+                IOSStatTile(symbol: "clock.fill", color: Play.Palette.purple, value: viewModel.stats.formattedTotalTime, label: "Time learned")
+                IOSStatTile(symbol: "checkmark.seal.fill", color: Play.Palette.success, value: "\(viewModel.completedPodcasts.count)", label: "Finished")
+            }
         }
     }
 
     private var goals: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            goalCard(
-                "Daily",
-                value: viewModel.todayActivity?.watchedSeconds ?? 0,
-                target: viewModel.habitSettings.currentDailyGoalMinutes * 60,
-                label: "\(viewModel.todayWatchedMinutes) / \(Int(viewModel.habitSettings.currentDailyGoalMinutes)) min"
-            )
-            goalCard(
-                "Weekly",
-                value: viewModel.stats.weeklySecondsWatched,
-                target: viewModel.stats.weeklyGoalHours * 3600,
-                label: "\(viewModel.stats.formattedWeeklyTime) / \(viewModel.stats.weeklyGoalHours.formatted())h"
-            )
+        VStack(spacing: 0) {
+            goalRow("Daily", symbol: "sun.max.fill", color: Play.Palette.flame,
+                    value: viewModel.habitLoop.learnedSeconds(on: LearningCalendar.dateKey(for: Date())),
+                    target: viewModel.habitSettings.currentDailyGoalMinutes * 60,
+                    label: "\(viewModel.todayWatchedMinutes) / \(Int(viewModel.habitSettings.currentDailyGoalMinutes)) min")
+            Divider().padding(.leading, 58)
+            goalRow("Weekly", symbol: "calendar", color: Play.Palette.gem,
+                    value: viewModel.stats.weeklySecondsWatched, target: viewModel.stats.weeklyGoalHours * 3600,
+                    label: "\(viewModel.stats.formattedWeeklyTime) / \(viewModel.stats.weeklyGoalHours.formatted())h")
         }
+        .outlined(20)
     }
 
-    private func goalCard(_ title: String, value: Double, target: Double, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
-            ProgressView(value: min(value / max(target, 1), 1))
-            Text(label).font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+    private func goalRow(_ title: String, symbol: String, color: Color, value: Double, target: Double, label: String) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: symbol).font(.title3.weight(.bold)).foregroundStyle(color).frame(width: 30)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.subheadline.weight(.semibold))
+                IOSQuestBar(value: min(value / max(target, 1), 1), label: label, tint: color)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .podCard(cornerRadius: 18)
+        .padding(14)
     }
 
     private var calendarCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text(displayedMonth.formatted(.dateTime.month(.wide).year())).font(.title3.bold())
+                Text(displayedMonth.formatted(.dateTime.month(.wide).year())).font(.headline)
                 Spacer()
                 Button("Previous", systemImage: "chevron.left") { shiftMonth(-1) }.labelStyle(.iconOnly)
                 Button("Today") { displayedMonth = Date(); viewModel.selectedCalendarDate = Date() }.font(.caption.weight(.semibold))
@@ -91,7 +106,8 @@ struct IOSProgressView: View {
             IOSMonthGrid(
                 month: displayedMonth,
                 selection: $viewModel.selectedCalendarDate,
-                activities: viewModel.activities,
+                learned: viewModel.habitLoop.learningDays(activities: viewModel.activities),
+                frozen: viewModel.habitStreakStatus.frozenDays,
                 scheduledDates: viewModel.podcasts.compactMap(\.scheduledAt)
             )
             Divider()
@@ -109,7 +125,7 @@ struct IOSProgressView: View {
                 Spacer()
                 Button("Schedule", systemImage: "calendar.badge.plus") { showScheduleDay = true }
                     .labelStyle(.iconOnly)
-                    .buttonStyle(.glass)
+                    .buttonStyle(.bordered).buttonBorderShape(.circle)
             }
             let scheduled = viewModel.scheduledPodcasts(on: viewModel.selectedCalendarDate)
             ForEach(scheduled) { podcast in
@@ -129,19 +145,13 @@ struct IOSProgressView: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(17)
-        .podCard(cornerRadius: 22)
+        .padding(16)
+        .outlined(20)
     }
 
     private var rescueReview: some View {
         let insights = viewModel.weeklyRescueInsights
         return VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Label("Distraction replacement", systemImage: "arrow.trianglehead.2.clockwise.rotate.90")
-                    .font(.title3.bold())
-                Spacer()
-                Button("Rescue", systemImage: "bolt.fill", action: onRescue).buttonStyle(.glassProminent)
-            }
             HStack(spacing: 18) {
                 insight("Kept", "\(insights.completed)")
                 insight("Reclaimed", "\(insights.reclaimedMinutes)m")
@@ -152,13 +162,13 @@ struct IOSProgressView: View {
                 Label("Biggest pull: \(cue.title)", systemImage: cue.symbolName).font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
         }
-        .padding(17)
-        .podCard(cornerRadius: 22)
+        .padding(16)
+        .outlined(20)
     }
 
     private func insight(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(value).font(.title3.bold()).contentTransition(.numericText())
+            Text(value).font(.title3.weight(.heavy)).contentTransition(.numericText())
             Text(title).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,7 +182,8 @@ struct IOSProgressView: View {
 private struct IOSMonthGrid: View {
     let month: Date
     @Binding var selection: Date
-    let activities: [DailyLearningActivity]
+    let learned: Set<String>
+    let frozen: Set<String>
     let scheduledDates: [Date]
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
 
@@ -197,48 +208,49 @@ private struct IOSMonthGrid: View {
 
     private func day(_ date: Date) -> some View {
         let key = LearningCalendar.dateKey(for: date)
-        let activity = activities.first { $0.dateKey == key }
-        let isScheduled = scheduledDates.contains { Calendar.current.isDate($0, inSameDayAs: date) }
-        let isSelected = Calendar.current.isDate(date, inSameDayAs: selection)
-        return Button { selection = date } label: {
-            VStack(spacing: 3) {
-                Text("\(Calendar.current.component(.day, from: date))").font(.caption.monospacedDigit())
-                HStack(spacing: 3) {
-                    Circle().fill(activity?.goalCompleted == true ? Color.green : activity == nil ? Color.clear : Color.accentColor).frame(width: 5, height: 5)
-                    Circle().fill(isScheduled ? Color.orange : Color.clear).frame(width: 5, height: 5)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 38)
-            .background(isSelected ? Color.accentColor : .clear, in: Circle())
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
+        return Button { selection = date; PlayFeedback.play(.select, sound: false) } label: {
+            PlayCalendarDay(day: Calendar.current.component(.day, from: date), learned: learned.contains(key), frozen: frozen.contains(key),
+                            scheduled: scheduledDates.contains { Calendar.current.isDate($0, inSameDayAs: date) },
+                            selected: Calendar.current.isDate(date, inSameDayAs: selection), isToday: Calendar.current.isDateInToday(date))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+        .accessibilityValue(learned.contains(key) ? "Learned" : frozen.contains(key) ? "Freeze used" : "")
     }
 }
 
 private struct IOSAchievementsGrid: View {
     @EnvironmentObject private var viewModel: AppViewModel
+    @State private var showAll = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Achievements", subtitle: "Earned through consistent learning")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 12)], spacing: 12) {
-                ForEach(viewModel.achievements) { achievement in
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack {
-                            Image(systemName: achievement.iconName).font(.title2).foregroundStyle(achievement.isUnlocked ? Color.accentColor : .secondary)
-                            Spacer()
-                            if achievement.isUnlocked { Image(systemName: "checkmark.seal.fill").foregroundStyle(.green) }
+        let sorted = viewModel.achievements.sorted { $0.isUnlocked && !$1.isUnlocked }
+        IOSSection("Achievements", accessory: {
+            Button(showAll ? "Show less" : "See all") { withAnimation(.snappy) { showAll.toggle() } }
+        }) {
+            VStack(spacing: 0) {
+                ForEach(Array((showAll ? sorted : Array(sorted.prefix(5))).enumerated()), id: \.element.id) { index, achievement in
+                    if index > 0 { Divider().padding(.leading, 76) }
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle().fill(achievement.isUnlocked ? Play.Palette.gold : Color(.systemGray5))
+                            Image(systemName: achievement.isUnlocked ? achievement.iconName : "lock.fill")
+                                .font(.title3.weight(.bold)).foregroundStyle(achievement.isUnlocked ? Color.white : Color(.systemGray2))
                         }
-                        Text(achievement.title).font(.subheadline.weight(.semibold))
-                        Text(achievement.description).font(.caption2).foregroundStyle(.secondary).lineLimit(3)
+                        .frame(width: 48, height: 48)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(achievement.title).font(.subheadline.weight(.semibold))
+                            Text(achievement.description).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        Spacer(minLength: 0)
+                        if achievement.isUnlocked { Image(systemName: "checkmark.circle.fill").foregroundStyle(Play.Palette.success) }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
-                    .padding(14)
-                    .podCard(cornerRadius: 17)
-                    .opacity(achievement.isUnlocked ? 1 : 0.62)
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+                    .opacity(achievement.isUnlocked ? 1 : 0.7)
+                    .accessibilityElement(children: .combine)
                 }
             }
+            .outlined(20)
         }
     }
 }
@@ -248,7 +260,6 @@ struct IOSSettingsView: View {
 
     var body: some View {
         ZStack {
-            ThemeBackdrop()
             List {
                 Section("Experience") {
                     NavigationLink { IOSAppearanceSettings() } label: { settingsLabel("Appearance", "paintpalette.fill", .purple) }
@@ -265,6 +276,13 @@ struct IOSSettingsView: View {
                 Section("Account") {
                     NavigationLink { IOSAccountSettings() } label: { settingsLabel("PodTrackio account", "person.crop.circle.fill", .cyan) }
                 }
+                Section("Feedback") {
+                    Toggle("Celebration sounds", isOn: $viewModel.habitLoop.soundsEnabled)
+                    Toggle("Haptics", isOn: $viewModel.habitLoop.hapticsEnabled)
+                }
+                #if DEBUG
+                PreviewMomentsSection()
+                #endif
                 Section {
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                     Text("Raw transcripts, downloaded media, and API keys stay on this device. Learning data and compact summaries sync through Supabase.")
@@ -272,7 +290,7 @@ struct IOSSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .scrollContentBackground(.hidden)
+            .listStyle(.insetGrouped)
         }
         .navigationTitle("Settings")
         .onDisappear { viewModel.saveData(); viewModel.rescheduleNotifications() }
@@ -294,7 +312,7 @@ private struct IOSAppearanceSettings: View {
     @AppStorage(AppTheme.storageKey) private var selectedTheme = AppTheme.system.rawValue
     var body: some View {
         ZStack {
-            ThemeBackdrop()
+            Color(.systemBackground).ignoresSafeArea()
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
                     ForEach(AppTheme.allCases) { theme in
@@ -328,18 +346,14 @@ private struct IOSHabitSettings: View {
     var body: some View {
         Form {
             Section("Daily learning") {
-                Toggle("Adaptive Build-Up Mode", isOn: $viewModel.habitSettings.adaptiveBuildUpEnabled)
                 LabeledContent("Current target", value: "\(Int(viewModel.habitSettings.currentDailyGoalMinutes)) minutes")
-                Slider(value: $viewModel.habitSettings.currentDailyGoalMinutes, in: 5...180, step: 5)
-                LabeledContent("Long-term target", value: "\(Int(viewModel.habitSettings.targetDailyGoalMinutes)) minutes")
-                Slider(value: $viewModel.habitSettings.targetDailyGoalMinutes, in: max(5, viewModel.habitSettings.currentDailyGoalMinutes)...240, step: 5)
             }
             Section("Consistency") {
-                LabeledContent("Minimum streak session", value: "\(Int(viewModel.habitSettings.minimumQualifyingSessionMinutes)) minutes")
+                LabeledContent("Streak and app unlock goal", value: "\(Int(viewModel.habitSettings.currentDailyGoalMinutes)) minutes")
                 Stepper("Weekly goal: \(viewModel.stats.weeklyGoalHours.formatted()) hours", value: $viewModel.stats.weeklyGoalHours, in: 1...40, step: 0.5)
             }
             Section {
-                Text("The daily target rises by five minutes after five successful days in the previous week. It never drops automatically.")
+                Text("Start at five minutes. Every two successful learning days add one minute, up to 60. Missed days hold your level. Today’s target stays fixed and syncs across devices.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -25,7 +25,8 @@ final class DataManager: @unchecked Sendable {
 
     private var appSupportURL: URL {
         let urls = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
-        let appSupport = urls[0].appendingPathComponent("PodcastTracker", isDirectory: true)
+        // Demo mode (debug QA) gets its own folder so sample data can never touch a real library.
+        let appSupport = urls[0].appendingPathComponent(AppViewModel.demoMode ? "PodcastTracker-Demo" : "PodcastTracker", isDirectory: true)
         if !fileManager.fileExists(atPath: appSupport.path) {
             try? fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
         }
@@ -185,6 +186,42 @@ final class DataManager: @unchecked Sendable {
 
     func saveSummaries(_ summaries: [PodcastSummary]) { save(summaries, to: summariesURL) }
     func loadSummaries() -> [PodcastSummary] { load([PodcastSummary].self, from: summariesURL) ?? [] }
+
+    private var unreadableHabitFiles: Set<URL> = []
+    private(set) var habitPersistenceError: String?
+
+    private func habitLoopURL(ownerID: String?) -> URL {
+        let suffix = ownerID.flatMap(UUID.init(uuidString:)).map { "_" + $0.uuidString } ?? ""
+        return appSupportURL.appendingPathComponent("habit_loop_v1" + suffix + ".json")
+    }
+
+    func saveHabitLoop(_ loop: HabitLoop) {
+        let url = habitLoopURL(ownerID: loop.ownerID)
+        guard !unreadableHabitFiles.contains(url) else { return }
+        do { try encoder.encode(loop).write(to: url, options: .atomic) }
+        catch { habitPersistenceError = "Habit progress could not be saved: \(error.localizedDescription)" }
+    }
+
+    func loadHabitLoop(ownerID: String? = nil) -> HabitLoop? {
+        let url = habitLoopURL(ownerID: ownerID)
+        let guest = habitLoopURL(ownerID: nil)
+        let source = fileManager.fileExists(atPath: url.path) ? url : (ownerID != nil ? guest : url)
+        guard fileManager.fileExists(atPath: source.path) else { return nil }
+        do {
+            var loop = try decoder.decode(HabitLoop.self, from: Data(contentsOf: source))
+            guard loop.ownerID == nil || loop.ownerID == ownerID else { return nil }
+            if ownerID != nil && source == guest {
+                loop.ownerID = ownerID
+                try encoder.encode(loop).write(to: url, options: .atomic)
+                try fileManager.moveItem(at: guest, to: guest.appendingPathExtension("claimed-" + UUID().uuidString))
+            }
+            return loop
+        } catch {
+            unreadableHabitFiles.insert(source)
+            habitPersistenceError = "Habit progress could not be read. The original file was preserved: \(error.localizedDescription)"
+            return nil
+        }
+    }
 
     func saveHabitSettings(_ settings: HabitSettings) { save(settings, to: habitsURL) }
     func loadHabitSettings() -> HabitSettings { load(HabitSettings.self, from: habitsURL) ?? HabitSettings() }

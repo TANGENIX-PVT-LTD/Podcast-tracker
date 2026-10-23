@@ -2,122 +2,127 @@ import SwiftUI
 
 struct TodayView: View {
     @EnvironmentObject private var viewModel: AppViewModel
-    private let columns = [GridItem(.adaptive(minimum: 210), spacing: 16)]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                header
-                rescueCard
-                if let next = viewModel.nextPodcast { nextEpisode(next) }
-                else { ContentUnavailableView("Build your learning queue", systemImage: "books.vertical", description: Text("Add an educational episode to begin.")) }
-                LazyVGrid(columns: columns, spacing: 16) {
-                    metric("Today", value: "\(viewModel.todayWatchedMinutes) min", detail: "\(viewModel.todayRemainingMinutes) remaining", symbol: "timer")
-                    metric("Streak", value: "\(viewModel.stats.currentStreak) days", detail: "5 minutes keeps it alive", symbol: "flame")
-                    metric("Build-Up", value: "\(Int(viewModel.habitSettings.currentDailyGoalMinutes)) min/day", detail: viewModel.habitSettings.adaptiveBuildUpEnabled ? "Adapts each week" : "Fixed target", symbol: "chart.line.uptrend.xyaxis")
+            let line = EchoLines.today(viewModel)
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()).uppercased())
+                        .font(Play.rounded(13, .heavy)).tracking(0.8).foregroundStyle(.secondary)
+                    EchoSays(mood: line.mood, text: line.text, size: 96)
                 }
-                recentActivity
+                .staggered(0, appeared)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 18) { primaryColumn }.frame(minWidth: 460)
+                        VStack(alignment: .leading, spacing: 18) { secondaryColumn }.frame(width: 380)
+                    }
+                    VStack(alignment: .leading, spacing: 18) { primaryColumn; secondaryColumn }
+                }
             }
             .padding(28)
-            .frame(maxWidth: 1080, alignment: .leading)
+            .frame(maxWidth: 1180, alignment: .leading)
         }
+        .onAppear { withAnimation(Play.Motion.or(Play.Motion.gentle, reduceMotion: reduceMotion)) { appeared = true } }
+    }
+
+    @ViewBuilder private var primaryColumn: some View {
+        HabitLoopPanel().staggered(1, appeared)
+        if let next = viewModel.nextPodcast { nextEpisode(next).staggered(2, appeared) }
+        else {
+            VStack(spacing: 14) {
+                EchoView(mood: .happy, size: 110)
+                Text("Build your learning queue").font(Play.rounded(22, .heavy))
+                Button("Add your first episode", systemImage: "plus") { viewModel.showAddPodcast = true }.buttonStyle(.chunky(.primary, fullWidth: false))
+            }
+            .frame(maxWidth: .infinity).padding(24).chunkyCard(cornerRadius: 22).staggered(2, appeared)
+        }
+        rescueCard.staggered(3, appeared)
+    }
+
+    @ViewBuilder private var secondaryColumn: some View {
+        LevelCard().staggered(2, appeared)
+        LeagueCard().staggered(3, appeared)
+        recentActivity.staggered(4, appeared)
     }
 
     private var rescueCard: some View {
         let insights = viewModel.weeklyRescueInsights
-        return HStack(spacing: 18) {
-            Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90.circle.fill")
-                .font(.system(size: 34))
-                .foregroundStyle(.tint)
+        return HStack(spacing: 16) {
+            Image(systemName: "bolt.shield.fill")
+                .font(.system(size: 22, weight: .black)).foregroundStyle(.white)
+                .frame(width: 46, height: 46)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Play.Palette.flame.gradient))
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("About to waste time?").font(.headline)
-                Text("Name the impulse. Replace it with one small learning win.")
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("About to waste time?").font(Play.rounded(17, .heavy))
+                Text(insights.attempts > 0 ? "\(insights.completed) kept · \(insights.reclaimedMinutes) min reclaimed this week" : "Name the impulse. Replace it with one small learning win.")
+                    .font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()
-            if insights.attempts > 0 {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(insights.completed) kept · \(insights.reclaimedMinutes) min")
-                        .font(.subheadline.weight(.semibold))
-                        .contentTransition(.numericText())
-                    Text("replaced this week")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Button("Rescue Me", systemImage: "bolt.fill") { viewModel.showRescueSheet = true }
-                .buttonStyle(.glassProminent)
+            Button("Rescue me", systemImage: "bolt.fill") { viewModel.showRescueSheet = true }
+                .buttonStyle(.chunky(.flame, size: .small, fullWidth: false))
                 .disabled(viewModel.nextPodcast == nil)
         }
-        .padding(18)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.subheadline).foregroundStyle(.secondary)
-            Text(viewModel.todayRemainingMinutes == 0 ? "Today’s learning is complete." : "Make the next \(viewModel.todayRemainingMinutes) minutes count.")
-                .font(.largeTitle.bold()).textSelection(.enabled)
-        }
+        .padding(16)
+        .chunkyCard(cornerRadius: 20)
     }
 
     private func nextEpisode(_ podcast: Podcast) -> some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 20) {
             AsyncImage(url: podcast.thumbnailURL.flatMap(URL.init(string:))) { image in image.resizable().scaledToFill() }
                 placeholder: { Rectangle().fill(.quaternary).overlay { Image(systemName: "play.rectangle") } }
-                .frame(width: 220, height: 124).clipShape(.rect(cornerRadius: 12))
+                .frame(width: 210, height: 118).clipShape(.rect(cornerRadius: 14))
+                .overlay(alignment: .topLeading) {
+                    Text(podcast.hasProgress ? "CONTINUE" : "UP NEXT").font(Play.rounded(11, .heavy)).tracking(0.6).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4).background(Capsule().fill(Play.themeTint)).padding(8)
+                }
             VStack(alignment: .leading, spacing: 10) {
-                Text("UP NEXT").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(podcast.title).font(.title2.weight(.semibold)).lineLimit(2)
-                ProgressView(value: podcast.progressPercentage)
-                GlassEffectContainer(spacing: 10) {
-                    HStack {
-                        Button("Resume", systemImage: "play.fill") { viewModel.selectPodcast(podcast) }
-                            .buttonStyle(.glassProminent)
-                        Button("Start 5 Minutes", systemImage: "timer") {
-                            viewModel.prepareCommitment(
-                                for: podcast,
-                                minutes: 5,
-                                cue: .today,
-                                launchIntent: .explicitUserAction
-                            )
-                        }.buttonStyle(.glass)
+                Text(podcast.title).font(Play.rounded(20, .heavy)).lineLimit(2)
+                if podcast.hasProgress { PlayProgressBar(value: podcast.progressPercentage, tint: Play.themeTint, height: 10, showsGlow: false) }
+                HStack(spacing: 12) {
+                    Button(podcast.hasProgress ? "Continue learning" : "Start learning", systemImage: "play.fill") {
+                        if viewModel.todayRemainingMinutes > 0 {
+                            viewModel.prepareCommitment(for: podcast, minutes: viewModel.todayRemainingMinutes, cue: .today, launchIntent: .explicitUserAction)
+                        } else { viewModel.selectPodcast(podcast) }
                     }
+                    .buttonStyle(.chunky(viewModel.streakAtRisk ? .flame : .primary, size: .small, fullWidth: false))
+                    Text(viewModel.streakProtectedToday ? "Daily goal complete" : "\(viewModel.todayRemainingMinutes) min to today’s goal")
+                        .font(Play.rounded(13, .bold)).foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(20)
-        .themedCard(cornerRadius: 18)
-    }
-
-    private func metric(_ title: String, value: String, detail: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol).font(.subheadline).foregroundStyle(.secondary)
-            Text(value).font(.title2.weight(.semibold)).contentTransition(.numericText())
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(18)
-        .themedCard(cornerRadius: 16)
+        .padding(16)
+        .chunkyCard(cornerRadius: 22)
     }
 
     private var recentActivity: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Recent activity").font(.title2.bold())
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Recent activity").font(Play.rounded(20, .heavy))
             if viewModel.activities.isEmpty { Text("Your accurate daily history begins here.").foregroundStyle(.secondary) }
+            let learned = viewModel.habitLoop.learningDays(activities: viewModel.activities)
             ForEach(viewModel.activities.sorted { $0.dateKey > $1.dateKey }.prefix(5)) { day in
-                HStack {
-                    Image(systemName: day.goalCompleted ? "checkmark.circle.fill" : "circle.dashed")
-                        .foregroundStyle(day.goalCompleted ? .green : .secondary)
-                    Text(LearningCalendar.date(from: day.dateKey)?.formatted(date: .abbreviated, time: .omitted) ?? day.dateKey)
+                let done = learned.contains(day.dateKey)
+                HStack(spacing: 10) {
+                    Image(systemName: done ? "flame.fill" : "moon.zzz.fill").font(.system(size: 13, weight: .black)).foregroundStyle(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(done ? AnyShapeStyle(Play.Palette.flame.gradient) : AnyShapeStyle(Play.Palette.ash)))
+                    Text(LearningCalendar.date(from: day.dateKey)?.formatted(date: .abbreviated, time: .omitted) ?? day.dateKey).font(Play.rounded(14, .bold))
                     Spacer()
-                    Text("\(Int(day.watchedSeconds / 60)) min · \(day.xpEarned) XP").foregroundStyle(.secondary)
-                }.padding(.vertical, 5)
+                    Text("\(Int(max(day.watchedSeconds, viewModel.habitLoop.learnedSeconds(on: day.dateKey)) / 60)) min").foregroundStyle(.secondary)
+                    Text("+\(day.xpEarned) XP").font(Play.rounded(13, .heavy)).foregroundStyle(Play.Palette.goldLip)
+                }
             }
         }
+        .padding(16)
+        .chunkyCard(cornerRadius: 20)
     }
 }
+
 
 struct DistractionRescueSheet: View {
     @EnvironmentObject private var viewModel: AppViewModel
@@ -168,7 +173,7 @@ struct DistractionRescueSheet: View {
                     Button("Replace It with \(minutes) Minutes", systemImage: "play.fill") {
                         viewModel.prepareRescue(cue: cue, minutes: minutes)
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                     .disabled(viewModel.nextPodcast == nil)
                 }
             }

@@ -234,6 +234,20 @@ final class SupabaseClient: @unchecked Sendable {
         try await upsertOwnedRows(categories.map(CategoryDTO.init), table: "categories")
     }
 
+    func syncHabitLoop(_ loop: HabitLoop, purchase: String? = nil, purchaseID: String? = nil) async throws -> HabitSyncResponse {
+        let owner = await MainActor.run { AuthManager.shared.userId?.uuidString }
+        guard let owner, loop.ownerID?.lowercased() == owner.lowercased() else {
+            throw GroqError.server("Habit data belongs to a different account. Reopen the workspace before syncing.")
+        }
+        // shortcut: sync exchanges the full private ledger, add cursors when histories make responses costly.
+        let eventData = try encoder.encode(loop.events)
+        let body: [String: Any] = ["_events": try JSONSerialization.jsonObject(with: eventData),
+            "_legacy_xp": loop.legacyXP, "_started_day": loop.startedDay,
+            "_purchase": purchase as Any? ?? NSNull(), "_purchase_id": purchaseID as Any? ?? NSNull(), "_day": LearningCalendar.dateKey(for: Date())]
+        let data = try await sendRequest(url: supabaseURL.appendingPathComponent("rest/v1/rpc/sync_habit_loop"), method: "POST", body: JSONSerialization.data(withJSONObject: body))
+        return try decoder.decode(HabitSyncResponse.self, from: data)
+    }
+
     func fetchActivities() async throws -> [DailyLearningActivity] {
         let data = try await fetchOwnedRows(table: "daily_learning_activity")
         return try decoder.decode([ActivityDTO].self, from: data).map(\.model)

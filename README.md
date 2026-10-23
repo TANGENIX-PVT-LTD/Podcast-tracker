@@ -9,6 +9,10 @@ They are separate native implementations; their source files are maintained
 independently. The Android interface is optimized for tablets and adapts to
 smaller screens.
 
+## Versions
+
+**3.0** is the current app: a full redesign with streaks, quests, Echo the mascot, beat-synced haptics and a rebuilt Brain. **2.0 (Classic)** stays downloadable for anyone who prefers the original design: check out tag `v2.0.0` or branch `release/2.x`, or grab its builds from GitHub Releases. See [CHANGELOG.md](CHANGELOG.md) for what changed and how to run both.
+
 ## Repository layout
 
 | Version | Source and project | Requirements |
@@ -21,13 +25,14 @@ smaller screens.
 ## Features
 
 - Episode libraries, categories, collections, notes, and learning schedules.
-- Playback progress, goals, streaks, achievements, and focus reminders.
+- Playback progress, goals, streak protection, daily quests, gems, personal leagues, and adaptive reminders.
+- Optional transcript-backed recall and strict iPhone/iPad Focus Mode, plus a best-effort Mac gate.
 - Transcript imports, AI learning briefs, action plans, and transcript-grounded chat.
 - Optional account sync through Supabase; downloads and API keys stay on-device.
 - iOS widgets and native Android tablet layouts.
 
 Feature availability varies by platform and distribution flavor. See
-[Brain architecture](BRAIN.md) and [Android feature parity](android/FEATURE_PARITY.md).
+[Daily learning loop and Focus Mode](HABIT_LOOP.md), [Brain architecture](BRAIN.md), and [Android feature parity](android/FEATURE_PARITY.md).
 
 ## Get the code
 
@@ -68,7 +73,7 @@ open ios/PodTrackio.xcodeproj
 
 Choose the **PodTrackio** scheme and an iPhone or iPad simulator, then build and
 run. To install on your own device, select your development team for both the
-app and widget targets and configure your own bundle identifiers and app group.
+app, widget, and three Focus extension targets and configure your own bundle identifiers and app group. Family Controls distribution requires Apple approval; see [Focus Mode setup](HABIT_LOOP.md#iphone-and-ipad).
 No signing certificate or private signing key is included.
 
 For a simulator compile without signing:

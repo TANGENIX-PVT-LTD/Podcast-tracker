@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".PodTrackioApplication"
@@ -30,6 +31,10 @@
             </intent-filter>
         </activity>
 
+        <receiver android:name=".widgets.LearningWidgetProvider" android:exported="false" android:label="@string/widget_title">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/learning_widget_info" />
+        </receiver>
         <receiver
             android:name=".notifications.ReminderReceiver"
             android:exported="false" />

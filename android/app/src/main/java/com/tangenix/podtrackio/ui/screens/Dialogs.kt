@@ -223,25 +223,10 @@ fun SettingsDialog(snapshot: AppSnapshot, auth: AuthState, viewModel: PodTrackio
                     }
                 }
                 Text("Goals", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Daily: ${dailyGoal.roundToInt()} minutes")
-                Slider(dailyGoal, { dailyGoal = it }, valueRange = 5f..120f, steps = 22, onValueChangeFinished = { viewModel.setDailyGoal(dailyGoal.toDouble()) })
+                Text("Daily: ${snapshot.habitSettings.currentDailyGoalMinutes.roundToInt()} minutes")
                 Text("Weekly: ${"%.1f".format(weeklyGoal)} hours")
                 Slider(weeklyGoal, { weeklyGoal = it }, valueRange = 1f..20f, steps = 18, onValueChangeFinished = { viewModel.setWeeklyGoal(weeklyGoal.toDouble()) })
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Adaptive build-up", fontWeight = FontWeight.SemiBold)
-                        Text("After five successful days, next week's daily target rises by ${habits.buildUpStepMinutes.roundToInt()} minutes up to ${habits.targetDailyGoalMinutes.roundToInt()}.", style = MaterialTheme.typography.bodySmall)
-                    }
-                    Switch(habits.adaptiveBuildUpEnabled, { viewModel.setHabitSettings(habits.copy(adaptiveBuildUpEnabled = it)) })
-                }
-                Text("Long-term daily target: ${habits.targetDailyGoalMinutes.roundToInt()} minutes")
-                Slider(
-                    habits.targetDailyGoalMinutes.toFloat(),
-                    { viewModel.setHabitSettings(habits.copy(targetDailyGoalMinutes = it.toDouble())) },
-                    valueRange = 15f..120f,
-                    steps = 20,
-                    enabled = habits.adaptiveBuildUpEnabled,
-                )
+                Text("Start at five minutes. Every two successful learning days add one minute, up to 60. Missed days hold your level. Today's target stays fixed and syncs across devices.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
                 Text("Notifications", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -1,10 +1,13 @@
 package com.tangenix.podtrackio.ui.screens
 
+import com.tangenix.podtrackio.ui.play.streakInfo
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -53,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.key
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -116,7 +120,7 @@ fun PlayerScreen(
         }
     }
     val importTranscript = { transcriptPicker.launch(arrayOf("text/plain", "text/vtt", "application/x-subrip", "application/octet-stream")) }
-    val seekTo: (Double) -> Unit = { seconds -> seekRequest = System.nanoTime() to seconds }
+    val seekTo: (Double) -> Unit = { seconds -> viewModel.resetPlaybackCredit(); seekRequest = System.nanoTime() to seconds }
     val activity = context as? Activity
     DisposableEffect(activity, fullScreen) {
         val controller = activity?.window?.let { window -> WindowCompat.getInsetsController(window, window.decorView) }
@@ -141,6 +145,7 @@ fun PlayerScreen(
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton({ viewModel.selectPodcast(null) }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back to library") }
                 Text(podcast.title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                com.tangenix.podtrackio.ui.play.PlayerGoalChip(ui.snapshot.streakInfo(), Modifier.padding(horizontal = 12.dp))
                 TextButton({ toolsVisible = !toolsVisible }) { Text(if (toolsVisible) "Hide learning tools" else "Show learning tools") }
             }
         }
@@ -148,8 +153,8 @@ fun PlayerScreen(
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 // A stable composition keeps the same Media3 player alive when fullscreen or tools change.
                 Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black)) {
-                    if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest)
-                    else EmbeddedYouTubePlayer(podcast.youtubeVideoId, podcast.lastPlaybackPosition.toInt())
+                    if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest)
+                    else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
                     Surface(Modifier.align(Alignment.TopEnd).padding(12.dp), color = Color.Black.copy(alpha = .66f), shape = RoundedCornerShape(12.dp)) {
                         IconButton({ fullScreen = !fullScreen }, Modifier.size(48.dp)) {
                             Icon(if (fullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
@@ -328,8 +333,8 @@ private fun VideoWorkspace(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             Card(Modifier.fillMaxSize(), shape = RoundedCornerShape(22.dp)) {
-                if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest)
-                else EmbeddedYouTubePlayer(podcast.youtubeVideoId, podcast.lastPlaybackPosition.toInt())
+                if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest)
+                else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
             }
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
@@ -342,7 +347,7 @@ private fun VideoWorkspace(
             }
         }
         if (!viewModel.externalMediaToolsAvailable) {
-            Text("Embedded playback is active in the Play-safe build. Install the full build for native seeking, measured watch-time sync, playlists and downloads.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Embedded playback reports actual learning time. The full build adds native playback, playlists and downloads.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         ui.downloadProgress[podcast.id]?.let { progress ->
             LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth())
@@ -353,7 +358,7 @@ private fun VideoWorkspace(
 
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekRequest: Pair<Long, Double>?) {
+private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekRequest: Pair<Long, Double>?, playRequest: String?) {
     val context = LocalContext.current
     var mediaUri by remember(podcast.id) { mutableStateOf<String?>(null) }
     var error by remember(podcast.id) { mutableStateOf<String?>(null) }
@@ -367,6 +372,14 @@ private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekR
         val uri = mediaUri
         if (uri != null) {
             val instance = ExoPlayer.Builder(context).build().apply {
+                val observed = this
+                addListener(object : Player.Listener {
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isPlaying) viewModel.beginPlaybackCredit(podcast.id, observed.currentPosition / 1_000.0)
+                        else viewModel.resetPlaybackCredit()
+                    }
+                    override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) { viewModel.resetPlaybackCredit() }
+                })
                 setMediaItem(MediaItem.fromUri(uri))
                 prepare()
                 seekTo((podcast.lastPlaybackPosition * 1_000).toLong())
@@ -393,6 +406,9 @@ private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekR
             }
         }
     }
+    LaunchedEffect(player, playRequest) {
+        if (player != null && playRequest == podcast.id && viewModel.consumePlaybackStart(podcast.id)) player?.play()
+    }
     LaunchedEffect(player, seekRequest) {
         seekRequest?.second?.let { seconds -> player?.seekTo((seconds * 1_000).toLong()) }
     }
@@ -414,20 +430,82 @@ private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekR
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun EmbeddedYouTubePlayer(videoId: String, startSeconds: Int) {
-    val html = remember(videoId, startSeconds) {
-        """<html><body style="margin:0;background:#000"><iframe width="100%" height="100%" src="https://www.youtube.com/embed/$videoId?start=$startSeconds&playsinline=1" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></body></html>"""
+private fun EmbeddedYouTubePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, playRequest: String?, seekRequest: Pair<Long, Double>?) {
+    var error by remember(podcast.id) { mutableStateOf<String?>(null) }
+    var lastSeek by remember(podcast.id) { mutableStateOf<Long?>(null) }
+    val released = remember(podcast.id) { java.util.concurrent.atomic.AtomicBoolean(false) }
+    key(podcast.id) {
+        Box(Modifier.fillMaxSize()) {
+            AndroidView(
+                factory = { context -> WebView(context).apply {
+                    val browser = this
+                    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                    settings.javaScriptEnabled = true
+                    settings.mediaPlaybackRequiresUserGesture = false
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = request?.isForMainFrame == true
+                    }
+                    addJavascriptInterface(object {
+                        @JavascriptInterface fun progress(position: Double, duration: Double, playing: Boolean) {
+                            if (!position.isFinite() || !duration.isFinite() || position !in 0.0..604800.0 || duration !in 0.0..604800.0) return
+                            browser.post { if (!released.get()) viewModel.onPlaybackProgress(podcast.id, position, duration, playing) }
+                        }
+                        @JavascriptInterface fun state(position: Double, playing: Boolean) {
+                            if (!position.isFinite() || position !in 0.0..604800.0) return
+                            browser.post {
+                                if (released.get()) return@post
+                                if (playing) viewModel.beginPlaybackCredit(podcast.id, position) else viewModel.resetPlaybackCredit()
+                            }
+                        }
+                        @JavascriptInterface fun failure(code: Int) {
+                            browser.post { error = "YouTube could not play this video (code $code). Try another episode; no learning credit was added." }
+                        }
+                    }, "PodTrackioLearning")
+                    val autoPlay = viewModel.consumePlaybackStart(podcast.id)
+                    loadDataWithBaseURL("https://www.youtube.com", learningPlayerDocument(podcast.youtubeVideoId, podcast.lastPlaybackPosition.toInt(), autoPlay), "text/html", "utf-8", null)
+                } },
+                update = { browser ->
+                    if (playRequest == podcast.id && viewModel.consumePlaybackStart(podcast.id)) browser.evaluateJavascript("window.podTrackioPlay && window.podTrackioPlay();", null)
+                    if (seekRequest != null && lastSeek != seekRequest.first) {
+                        lastSeek = seekRequest.first
+                        viewModel.resetPlaybackCredit()
+                        val seconds = seekRequest.second.takeIf { it.isFinite() }?.coerceAtLeast(0.0) ?: 0.0
+                        browser.evaluateJavascript("window.podTrackioSeek && window.podTrackioSeek($seconds);", null)
+                    }
+                },
+                onRelease = { browser ->
+                    released.set(true)
+                    viewModel.stopEmbeddedPlayback(podcast.id)
+                    browser.removeJavascriptInterface("PodTrackioLearning")
+                    browser.stopLoading(); browser.loadUrl("about:blank"); browser.destroy()
+                },
+                modifier = Modifier.fillMaxSize().background(Color.Black),
+            )
+            error?.let { Text(it, Modifier.align(Alignment.BottomCenter).background(Color.Black).padding(16.dp), color = Color.White) }
+        }
     }
-    AndroidView(
-        factory = { context -> WebView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            settings.javaScriptEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = true
-            webViewClient = WebViewClient()
-            loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
-        } },
-        modifier = Modifier.fillMaxSize().background(Color.Black),
-    )
+}
+
+internal fun learningPlayerDocument(videoId: String, startSeconds: Int, autoPlay: Boolean): String {
+    require(Regex("^[A-Za-z0-9_-]{11}$").matches(videoId)) { "Invalid YouTube video ID" }
+    val start = startSeconds.coerceIn(0, 604800)
+    return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>html,body,#player{width:100%;height:100%;margin:0;background:#000}</style></head><body><div id="player"></div>
+        <script>
+        var player, wantPlay=$autoPlay;
+        window.podTrackioPlay=function(){wantPlay=true;if(player&&player.playVideo)player.playVideo();};
+        window.podTrackioSeek=function(seconds){if(player&&player.seekTo)player.seekTo(seconds,true);};
+        function report(){if(player&&player.getCurrentTime&&player.getPlayerState){
+            PodTrackioLearning.progress(player.getCurrentTime(),player.getDuration(),player.getPlayerState()===1);}}
+        function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:'$videoId',width:'100%',height:'100%',
+            playerVars:{start:$start,playsinline:1,origin:'https://www.youtube.com'},events:{
+            onReady:function(){if(wantPlay)player.playVideo();report();},
+            onStateChange:function(e){PodTrackioLearning.state(player.getCurrentTime(),e.data===1);report();},
+            onError:function(e){PodTrackioLearning.failure(e.data);}}});}
+        setInterval(report,1000);
+        </script><script src="https://www.youtube.com/iframe_api"></script></body></html>""".trimIndent()
 }
 
 @Composable

@@ -52,6 +52,7 @@ fun LoginScreen(viewModel: PodTrackioViewModel, auth: AuthState) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                     Text("Turn watching into learning.", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+                    com.tangenix.podtrackio.ui.play.EchoSays(com.tangenix.podtrackio.ui.play.EchoMood.HAPPY, "Hi, I'm Echo! I'll keep your learning streak burning.", size = 88.dp)
                     Text(
                         "Your library, playback position, notes, goals and learning briefs follow you between PodTrackio on macOS and Android.",
                         style = MaterialTheme.typography.titleMedium,

@@ -16,6 +16,7 @@ struct LearningNotificationPlanItem: Identifiable, Equatable, Sendable {
     var title: String
     var body: String
     var podcastID: UUID
+    var template: Int = 0
 }
 
 struct ScheduledPodcastNotification: Identifiable, Equatable, Sendable {
@@ -35,8 +36,16 @@ enum NotificationPlanner {
         isPlaying: Bool,
         distractionCue: DistractionCue? = nil,
         distractionPattern: DistractionPattern? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        habitLoop: HabitLoop? = nil,
+        focus: FocusDayState? = nil,
+        lastSession: Date? = nil
     ) -> [LearningNotificationPlanItem] {
+        if let habitLoop {
+            return HabitReminderPlanner.plan(now: now, preferences: preferences, activities: activities, goalMinutes: currentGoalMinutes,
+                nextPodcast: nextPodcast, isPlaying: isPlaying, loop: habitLoop, focus: focus, lastSession: lastSession,
+                pattern: distractionPattern, calendar: calendar)
+        }
         guard preferences.isEnabled, !isPlaying, let nextPodcast else { return [] }
         var result: [LearningNotificationPlanItem] = []
 

@@ -15,6 +15,7 @@
 | Focus rescue | 5-30 minute real-playback promises, completion win, +5/+10 extension | UI/model path verified |
 | Goals and momentum | Daily/weekly goals, adaptive build-up, streaks, XP, levels, achievements, calendar | Unit tests and tablet journey passed |
 | Notifications | Three daily times, weekdays, quiet hours, episode alarms, boot restore, adaptive rescue reminder | Settings/device manifest verified; delivery timing needs physical-device observation |
+| Daily learning loop | Five-minute quests, freezes, gems/chests, earned boosts, solo historical leagues, badges, seven-day promises, cached transcript recall, widget | Policy tests and emulator checks; live account/provider gates in `../HABIT_LOOP.md` |
 | Appearance | System, Ocean, Orchid, Forest, Sunset, Midnight | Tablet Settings journey passed |
 | Security/offline | Atomic JSON cache, Android Keystore AES-GCM, HTTPS-only traffic, no backup | On-device round-trip passed |
 

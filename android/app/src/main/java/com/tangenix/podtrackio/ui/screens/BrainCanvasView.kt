@@ -48,7 +48,6 @@ fun BrainCanvasView(documents: List<BrainSource>, modifier: Modifier = Modifier,
     val latestSelect by rememberUpdatedState(onSelect)
     val latestDocuments by rememberUpdatedState(documents)
     val latestPayload by rememberUpdatedState(payload)
-    val bridge = remember { CanvasBridge() }
     AndroidView(modifier = modifier, factory = { ctx ->
         WebView(ctx).apply {
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
@@ -59,6 +58,7 @@ fun BrainCanvasView(documents: List<BrainSource>, modifier: Modifier = Modifier,
             settings.builtInZoomControls = false
             settings.displayZoomControls = false
             settings.setSupportZoom(false)
+            val bridge = CanvasBridge()
             addJavascriptInterface(bridge, "BrainCanvasNative")
             bridge.select = { id -> post { latestDocuments.firstOrNull { it.id == id }?.let(latestSelect) } }
             webViewClient = object : WebViewClient() {

@@ -82,7 +82,7 @@ private struct MomentumWidgetView: View {
             Gauge(value: entry.snapshot.dailyProgress) {
                 Image(systemName: "headphones")
             } currentValueLabel: {
-                Text("\(entry.snapshot.todayWatchedMinutes)")
+                Text("\(entry.snapshot.currentWatchedMinutes)")
             }
             .gaugeStyle(.accessoryCircularCapacity)
             .widgetAccentable()
@@ -90,7 +90,7 @@ private struct MomentumWidgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Label("Learning streak", systemImage: "flame.fill")
                     .font(.caption.weight(.semibold))
-                Text("\(entry.snapshot.currentStreak) days · \(entry.snapshot.todayWatchedMinutes)/\(entry.snapshot.dailyGoalMinutes) min")
+                Text("\(entry.snapshot.currentStreak) days · \(entry.snapshot.currentWatchedMinutes)/\(entry.snapshot.dailyGoalMinutes) min")
                     .font(.caption2)
                 ProgressView(value: entry.snapshot.dailyProgress)
                     .widgetAccentable()
@@ -107,12 +107,15 @@ private struct MomentumWidgetView: View {
                         .foregroundStyle(.orange)
                 }
                 Spacer(minLength: 0)
-                Text("\(entry.snapshot.todayWatchedMinutes) min")
+                Text("\(entry.snapshot.currentWatchedMinutes) min")
                     .font(.system(size: 27, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
-                Text("of \(entry.snapshot.dailyGoalMinutes) today")
+                Text(entry.snapshot.protectedToday ? "Streak protected · \(entry.snapshot.gems) gems" : "\(entry.snapshot.dailyGoalMinutes) minutes protects today")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
+                if let minutes = entry.snapshot.currentFocusMinutesRemaining {
+                    Text(minutes == 0 ? "Apps unlocked" : "\(minutes) minutes to unlock apps").font(.caption2).foregroundStyle(.white.opacity(0.8))
+                }
                 ProgressView(value: entry.snapshot.dailyProgress)
                     .tint(.cyan)
             }
@@ -210,7 +213,7 @@ private struct LearningHQWidgetView: View {
             }
 
             HStack(spacing: 10) {
-                metric("Today", "\(entry.snapshot.todayWatchedMinutes)m", "timer")
+                metric("Today", "\(entry.snapshot.currentWatchedMinutes)m", "timer")
                 metric("Level", entry.snapshot.levelTitle, "graduationcap.fill")
                 metric("Library", "\(entry.snapshot.libraryCount)", "books.vertical.fill")
             }

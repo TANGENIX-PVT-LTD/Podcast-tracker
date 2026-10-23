@@ -64,6 +64,10 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.WorkspacePremium
+import com.tangenix.podtrackio.ui.play.*
 
 import kotlin.math.roundToInt
 
@@ -76,7 +80,8 @@ fun ProgressScreen(ui: PodTrackioUiState, viewModel: PodTrackioViewModel) {
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var scheduleDay by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+    val info = remember(ui.snapshot.habitLoop, ui.snapshot.activities, stats) { ui.snapshot.streakInfo() }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -85,10 +90,14 @@ fun ProgressScreen(ui: PodTrackioUiState, viewModel: PodTrackioViewModel) {
             verticalArrangement = Arrangement.spacedBy(24.dp),
             horizontalAlignment = Alignment.Start,
         ) {
-            // Header
-            Text("Progress", style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold))
-
-            // Metrics Grid - matches macOS layout
+            Text("Your progress", style = playType(32))
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                Box(Modifier.weight(1f)) { StreakHero(info, {}) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    LevelCard(stats)
+                    LeagueCard(ui.snapshot.habitLoop.league(ui.snapshot.activities))
+                }
+            }
             MetricsProgressGrid(stats = stats)
 
             // Learning Calendar - matches macOS LearningCalendarCard
@@ -195,16 +204,13 @@ private fun LearningCalendarCard(
         while (size % 7 != 0) add(null)
     }
     val selectedActivity = snapshot.activities.firstOrNull { it.dateKey == selectedDate.toString() }
+    val learnedDays = remember(snapshot.habitLoop, snapshot.activities) { snapshot.habitLoop.learningDays(snapshot.activities) }
+    val frozenDays = remember(snapshot.habitLoop, snapshot.activities) { snapshot.habitLoop.streak(snapshot.activities).frozenDays }
     val scheduled = snapshot.podcasts.filter { podcast ->
         podcast.scheduledAt?.atZone(ZoneId.systemDefault())?.toLocalDate() == selectedDate && !podcast.isCompleted
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
+    Box(Modifier.fillMaxWidth().chunkyCard(20.dp)) {
         Column(
             modifier = Modifier.padding(18.dp).fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -245,39 +251,21 @@ private fun LearningCalendarCard(
                         if (date == null) {
                             Spacer(Modifier.weight(1f).height(44.dp))
                         } else {
-                            val activity = snapshot.activities.firstOrNull { it.dateKey == date.toString() }
                             val hasSchedule = snapshot.podcasts.any { it.scheduledAt?.atZone(ZoneId.systemDefault())?.toLocalDate() == date && !it.isCompleted }
                             val isSelected = date == selectedDate
                             val isToday = date == LocalDate.now()
-
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .clickable { onDate(date) },
-                                shape = RoundedCornerShape(11.dp),
-                                color = when {
-                                    isSelected -> MaterialTheme.colorScheme.primaryContainer
-                                    isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    else -> Color.Transparent
-                                },
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center,
-                                ) {
-                                    Text(
-                                        date.dayOfMonth.toString(),
-                                        style = if (isSelected) MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.bodySmall,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        (if (activity != null) "●" else "") + (if (hasSchedule) " ●" else ""),
-                                        color = if (activity?.goalCompleted == true) Color(0xFF2E8B57) else MaterialTheme.colorScheme.primary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
+                            val key = date.toString()
+                            val learned = key in learnedDays
+                            val frozen = key in frozenDays
+                            Box(Modifier.weight(1f).height(44.dp).clickable { PlayFeedback.play(Cue.SELECT, sound = false); onDate(date) }, contentAlignment = Alignment.Center) {
+                                Box(Modifier.size(36.dp).clip(if (frozen) RoundedCornerShape(9.dp) else CircleShape).background(when {
+                                    learned -> Palette.flame; frozen -> Palette.ice; else -> Color.Transparent
+                                }).then(if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, CircleShape) else if (isToday && !learned) Modifier.border(2.dp, Palette.flame, CircleShape) else Modifier),
+                                    contentAlignment = Alignment.Center) {
+                                    Text(date.dayOfMonth.toString(), style = playType(13, if (learned || frozen) FontWeight.Black else FontWeight.SemiBold),
+                                        color = if (learned || frozen) Color.White else MaterialTheme.colorScheme.onSurface)
                                 }
+                                if (hasSchedule) Box(Modifier.align(Alignment.BottomCenter).size(6.dp).clip(CircleShape).background(Palette.gem))
                             }
                         }
                     }
@@ -329,15 +317,15 @@ private fun AchievementsSection(
     unlocked: Set<String>,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Achievements", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Achievements", style = playType(24))
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxWidth().height((160 * ((achievements.size + 2) / 3)).dp),
+            modifier = Modifier.fillMaxWidth().height((190 * ((achievements.size + 2) / 3)).dp),
         ) {
-            items(achievements) { achievement ->
+            items(achievements.sortedByDescending { it.id in unlocked }) { achievement ->
                 val earned = achievement.id in unlocked
                 AchievementCard(achievement = achievement, earned = earned)
             }
@@ -347,29 +335,16 @@ private fun AchievementsSection(
 
 @Composable
 private fun AchievementCard(achievement: com.tangenix.podtrackio.domain.Achievement, earned: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (earned) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                if (earned) Icons.Rounded.Timer else Icons.Rounded.Lock,
-                null,
-                tint = if (earned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(32.dp),
-            )
-            Text(achievement.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text(achievement.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text(if (earned) "Unlocked" else "+${achievement.xpReward} XP", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    Column(Modifier.fillMaxWidth().chunkyCard(18.dp).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.size(62.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.matchParentSize().padding(top = 4.dp).clip(CircleShape).background(if (earned) Palette.goldLip else Color.Gray.copy(alpha = .25f)))
+            Box(Modifier.matchParentSize().padding(bottom = 4.dp).clip(CircleShape).background(if (earned) Palette.gold else Color.Gray.copy(alpha = .15f)), contentAlignment = Alignment.Center) {
+                Icon(if (earned) Icons.Rounded.WorkspacePremium else Icons.Rounded.Lock, null, tint = if (earned) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
+            }
         }
+        Text(achievement.title, style = playType(13), textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2)
+        Text(achievement.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 3)
+        Text(if (earned) "Unlocked" else "+${achievement.xpReward} XP", style = playType(12), color = if (earned) Palette.success else Palette.goldLip)
     }
 }
 

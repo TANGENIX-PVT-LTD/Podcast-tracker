@@ -4,183 +4,181 @@ struct IOSTodayView: View {
     @EnvironmentObject private var viewModel: AppViewModel
     let onAdd: () -> Void
     let onRescue: () -> Void
+    @State private var showStreak = false
+    @State private var showQuests = false
+
+    private var day: String { LearningCalendar.dateKey(for: Date()) }
 
     var body: some View {
-        ZStack {
-            ThemeBackdrop()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: PodSpacing.section) {
-                    header
-                    if let next = viewModel.nextPodcast {
-                        nextEpisode(next)
-                        rescueCard
-                    } else {
-                        emptyLibrary
-                    }
-                    metrics
-                    recentActivity
-                }
-                .padding(PodSpacing.page)
-                .padding(.bottom, 24)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                goalHeader
+                if let next = viewModel.nextPodcast { upNext(next) } else { emptyLibrary }
+                quests
+                rhythm
+                rescueRow
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 32)
         }
+        .background(Color(.systemBackground))
         .navigationTitle("Today")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { IOSStatsBar { showStreak = true } }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: onAdd) { Label("Add Episode", systemImage: "plus") }
             }
         }
+        .sheet(isPresented: $showStreak) { IOSStreakSheet() }
+        .sheet(isPresented: $showQuests) { IOSQuestsSheet() }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-            Text(viewModel.todayRemainingMinutes == 0
-                 ? "Learning complete."
-                 : "Make the next \(viewModel.todayRemainingMinutes) minutes count.")
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func nextEpisode(_ podcast: Podcast) -> some View {
-        Button { viewModel.selectPodcast(podcast) } label: {
+    // Echo + today's goal + week: the one status block on the page.
+    private var goalHeader: some View {
+        let line = EchoLines.today(viewModel)
+        return Button { showStreak = true } label: {
             VStack(alignment: .leading, spacing: 16) {
-                ZStack(alignment: .bottomLeading) {
-                    PodcastThumbnail(podcast: podcast, width: nil, height: 205)
-                        .frame(maxWidth: .infinity)
-                    Text(podcast.hasProgress ? "CONTINUE LEARNING" : "UP NEXT")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.black.opacity(0.62), in: Capsule())
-                        .padding(12)
-                }
-                VStack(alignment: .leading, spacing: 9) {
-                    Text(podcast.title)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .multilineTextAlignment(.leading)
-                    if podcast.hasProgress {
-                        ProgressView(value: podcast.progressPercentage)
-                        Text("Resume at \(podcast.lastPlaybackPosition.podTimestamp)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 12) {
+                    EchoView(mood: line.mood, size: 64)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(headline).font(.headline).foregroundStyle(.primary)
+                        Text(line.text).font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    HStack {
-                        Label("Open episode", systemImage: "play.fill")
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
+                    Spacer(minLength: 0)
+                    PlayRing(value: viewModel.dailyGoalProgress, tint: viewModel.streakProtectedToday ? Play.Palette.success : Play.Palette.flame, lineWidth: 6) {
+                        Text("\(viewModel.todayWatchedMinutes)").font(.subheadline.weight(.heavy)).monospacedDigit()
                     }
-                    .foregroundStyle(.tint)
+                    .frame(width: 48, height: 48)
                 }
+                IOSWeekStrip(days: viewModel.weekStrip)
             }
             .padding(16)
+            .outlined(20)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .podCard(cornerRadius: 24)
-        .accessibilityLabel("\(podcast.hasProgress ? "Resume" : "Open") \(podcast.title)")
+        .accessibilityHint("Opens your streak")
     }
 
-    private var rescueCard: some View {
-        IOSGlassSurface(cornerRadius: 22, interactive: true, tint: .accentColor.opacity(0.12)) {
-            VStack(alignment: .leading, spacing: 15) {
-                HStack(alignment: .top, spacing: 13) {
-                    Image(systemName: "bolt.shield.fill")
-                        .font(.title2)
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("About to waste time?").font(.headline)
-                        Text("Replace the impulse with one honest five-minute learning win.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Button(action: onRescue) {
-                    Label("Start a Rescue", systemImage: "bolt.fill")
+    private var headline: String {
+        let streak = viewModel.stats.currentStreak
+        if streak == 0 { return "No streak yet" }
+        return viewModel.streakProtectedToday ? "\(streak)-day streak · safe today" : "\(streak)-day streak"
+    }
+
+    private func upNext(_ podcast: Podcast) -> some View {
+        IOSSection(podcast.hasProgress ? "Continue learning" : "Up next") {
+            VStack(alignment: .leading, spacing: 14) {
+                Button { viewModel.selectPodcast(podcast) } label: {
+                    PodcastThumbnail(podcast: podcast, width: nil, height: 196)
                         .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glassProminent)
-            }
-            .padding(18)
-        }
-    }
-
-    private var metrics: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Your rhythm", subtitle: "Measured from real playback time")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                metric("Today", value: "\(viewModel.todayWatchedMinutes)m", detail: "\(viewModel.todayRemainingMinutes)m left", symbol: "timer")
-                metric("Streak", value: "\(viewModel.stats.currentStreak)", detail: "days", symbol: "flame.fill")
-                metric("Level", value: "\(viewModel.stats.currentLevel.number)", detail: viewModel.stats.currentLevel.title, symbol: viewModel.stats.currentLevel.iconName)
-                metric("Library", value: "\(viewModel.podcasts.count)", detail: "episodes", symbol: "books.vertical.fill")
-            }
-        }
-    }
-
-    private func metric(_ title: String, value: String, detail: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(.title2, design: .rounded, weight: .bold))
-                .contentTransition(.numericText())
-            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .podCard(cornerRadius: 18)
-    }
-
-    private var recentActivity: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Recent activity")
-            if viewModel.activities.isEmpty {
-                Text("Your accurate daily history starts with the first episode you play.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(viewModel.activities.sorted { $0.dateKey > $1.dateKey }.prefix(5)) { day in
-                    HStack(spacing: 12) {
-                        Image(systemName: day.goalCompleted ? "checkmark.circle.fill" : "circle.dashed")
-                            .foregroundStyle(day.goalCompleted ? .green : .secondary)
-                            .font(.title3)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(LearningCalendar.date(from: day.dateKey)?.formatted(date: .abbreviated, time: .omitted) ?? day.dateKey)
-                                .font(.subheadline.weight(.semibold))
-                            Text("\(Int(day.watchedSeconds / 60)) min · \(day.sessions) sessions")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                        .overlay(alignment: .bottom) {
+                            if podcast.hasProgress {
+                                GeometryReader { proxy in
+                                    Rectangle().fill(Play.Palette.error).frame(width: proxy.size.width * podcast.progressPercentage, height: 4)
+                                }
+                                .frame(height: 4)
+                                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16, style: .continuous))
+                            }
                         }
-                        Spacer()
-                        Text("\(day.xpEarned) XP").font(.caption.weight(.semibold)).foregroundStyle(.tint)
-                    }
-                    .padding(14)
-                    .podCard(cornerRadius: 16)
+                }
+                .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(podcast.title).font(.headline).lineLimit(2)
+                    Text(podcast.hasProgress ? "Resume at \(podcast.lastPlaybackPosition.podTimestamp)" : "Ready when you are")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Button {
+                    viewModel.selectPodcast(podcast)
+                } label: {
+                    Text(podcast.hasProgress ? "Continue" : "Start")
+                }
+                .buttonStyle(.chunky(viewModel.streakAtRisk ? .flame : .primary))
+                .accessibilityLabel("\(podcast.hasProgress ? "Resume" : "Open") \(podcast.title)")
+            }
+        }
+    }
+
+    private var quests: some View {
+        IOSSection("Daily quests", accessory: {
+            Button("See all") { showQuests = true }
+        }) {
+            VStack(spacing: 0) {
+                let seconds = viewModel.habitLoop.learnedSeconds(on: day)
+                let goal = max(1, Int(viewModel.habitSettings.currentDailyGoalMinutes))
+                questRow(1, "Learn for 5 minutes", "headphones", Play.Palette.gem,
+                         min(1, seconds / 300), "\(min(5, Int(seconds / 60))) / 5")
+                Divider().padding(.leading, 62)
+                questRow(2, "Hit today's goal", "target", Play.Palette.flame,
+                         viewModel.dailyGoalProgress, "\(min(goal, viewModel.todayWatchedMinutes)) / \(goal)")
+                Divider().padding(.leading, 62)
+                let reflected = viewModel.habitLoop.has("reflection/\(day)")
+                questRow(3, "Recall or save a takeaway", "lightbulb.fill", Play.Palette.purple, reflected ? 1 : 0, reflected ? "1 / 1" : "0 / 1")
+            }
+            .outlined(20)
+        }
+    }
+
+    private func questRow(_ number: Int, _ title: String, _ symbol: String, _ color: Color, _ progress: Double, _ label: String) -> some View {
+        let done = viewModel.habitLoop.has("quest/\(day)/\(number)/xp")
+        return HStack(spacing: 14) {
+            Image(systemName: symbol).font(.title3.weight(.bold)).foregroundStyle(color).frame(width: 34)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.subheadline.weight(.semibold))
+                IOSQuestBar(value: done ? 1 : progress, label: done ? "Done" : label, tint: done ? Play.Palette.success : Play.Palette.gold)
+            }
+            Image(systemName: done ? "gift.fill" : "gift").font(.title3).foregroundStyle(done ? Play.Palette.gold : Color(.systemGray3))
+                .symbolEffect(.bounce, value: done)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var rhythm: some View {
+        IOSSection("Your rhythm") {
+            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow {
+                    IOSStatTile(symbol: "flame.fill", color: Play.Palette.flame, value: "\(viewModel.stats.currentStreak)", label: "Day streak")
+                    IOSStatTile(symbol: "bolt.fill", color: Play.Palette.gold, value: "\(viewModel.stats.totalXP)", label: "Total XP")
+                }
+                GridRow {
+                    IOSStatTile(symbol: "shield.lefthalf.filled", color: Play.Palette.gem, value: viewModel.habitLeague.title, label: "League")
+                    IOSStatTile(symbol: viewModel.stats.currentLevel.iconName, color: Play.Palette.purple, value: viewModel.stats.currentLevel.title, label: "Level \(viewModel.stats.currentLevel.number)")
                 }
             }
         }
+    }
+
+    private var rescueRow: some View {
+        Button(action: onRescue) {
+            HStack(spacing: 14) {
+                Image(systemName: "bolt.shield.fill").font(.title2).foregroundStyle(Play.Palette.flame).frame(width: 34)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("About to waste time?").font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    Text("Swap the impulse for a 5-minute win").font(.footnote).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote.weight(.bold)).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .outlined(20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var emptyLibrary: some View {
-        ContentUnavailableView {
-            Label("Build your learning queue", systemImage: "books.vertical")
-        } description: {
+        VStack(spacing: 14) {
+            EchoView(mood: .happy, size: 110)
+            Text("Build your learning queue").font(.title3.bold())
             Text("Add a YouTube episode or playlist you genuinely want to learn from.")
-        } actions: {
-            Button("Add Episode", systemImage: "plus", action: onAdd)
-                .buttonStyle(.glassProminent)
+                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Add an episode", action: onAdd).buttonStyle(.chunky)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 36)
-        .podCard(cornerRadius: 24)
+        .padding(.vertical, 12)
     }
 }
 
@@ -193,7 +191,7 @@ struct IOSLibraryView: View {
 
     var body: some View {
         ZStack {
-            ThemeBackdrop()
+            Color(.systemBackground).ignoresSafeArea()
             VStack(spacing: 0) {
                 filterBar
                 if viewModel.filteredPodcasts.isEmpty {
@@ -211,8 +209,7 @@ struct IOSLibraryView: View {
                                 IOSPodcastRow(podcast: podcast)
                             }
                             .buttonStyle(.plain)
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 if !podcast.isCompleted {
                                     Button { viewModel.markCompleted(podcast) } label: {
@@ -299,16 +296,18 @@ struct IOSLibraryView: View {
                 Button(action: action) {
                     if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.borderedProminent)
                 .tint(tint)
             } else {
                 Button(action: action) {
                     if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.bordered)
             }
         }
-        .font(.caption.weight(.semibold))
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .font(.subheadline.weight(.semibold))
     }
 
     @ViewBuilder
@@ -361,8 +360,9 @@ private struct IOSPodcastRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            PodcastThumbnail(podcast: podcast, width: 116, height: 68)
-            VStack(alignment: .leading, spacing: 7) {
+            PodcastThumbnail(podcast: podcast, width: 112, height: 63)
+                .clipShape(.rect(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 6) {
                 Text(podcast.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
@@ -383,16 +383,10 @@ private struct IOSPodcastRow: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                if podcast.hasProgress { ProgressView(value: podcast.progressPercentage) }
+                if podcast.hasProgress { ProgressView(value: podcast.progressPercentage).tint(Play.Palette.error) }
             }
             Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.caption.bold())
-                .foregroundStyle(.tertiary)
         }
-        .padding(12)
-        .podCard(cornerRadius: 18)
-        .padding(.vertical, 3)
         .contentShape(Rectangle())
     }
 }

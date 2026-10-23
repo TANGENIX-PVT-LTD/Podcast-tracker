@@ -43,7 +43,7 @@ struct SchedulePodcastSheet: View {
                         viewModel.schedulePodcast(podcast, at: scheduledDate)
                         dismiss()
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                 }
             }
         }
@@ -87,7 +87,7 @@ struct ScheduleDaySheet: View {
                         viewModel.schedulePodcast(podcast, at: time)
                         dismiss()
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                     .disabled(podcastID == nil)
                 }
             }

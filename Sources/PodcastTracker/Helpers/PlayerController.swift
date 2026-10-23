@@ -19,6 +19,7 @@ final class PlayerController: ObservableObject {
     private var pendingIndicatorTask: Task<Void, Never>?
 
     func seek(to seconds: Double) {
+        AppViewModel.shared.resetPlaybackCredit()
         let clamped = max(0, seconds)
         switch backend {
         case .native:

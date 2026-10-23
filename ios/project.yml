@@ -21,6 +21,7 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: Shared
+      - path: Focus/Shared
       - path: Sources/PodcastTracker/Models
       - path: Sources/PodcastTracker/ViewModels
       - path: Sources/PodcastTracker/Helpers
@@ -28,11 +29,17 @@ targets:
       - path: Sources/PodcastTracker/Resources/BrainCanvas
         type: folder
         buildPhase: resources
+      - path: Sources/PodcastTracker/Resources/Sounds
+        type: folder
+        buildPhase: resources
       - path: iOS/Assets.xcassets
       - path: PodTrackio.icon
         buildPhase: resources
     dependencies:
       - target: PodTrackioWidgets
+      - target: PodTrackioFocusMonitor
+      - target: PodTrackioFocusShield
+      - target: PodTrackioFocusActions
       - package: YouTubeMetadata
         product: YouTubeTranscript
       - package: YouTubeKit
@@ -44,8 +51,8 @@ targets:
         PRODUCT_MODULE_NAME: PodcastTracker
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: 1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 3.0
+        CURRENT_PROJECT_VERSION: 3
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: iOS/Info.plist
         CODE_SIGN_ENTITLEMENTS: iOS/PodTrackio.entitlements
@@ -67,11 +74,80 @@ targets:
         PRODUCT_NAME: PodTrackioWidgets
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: 1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 3.0
+        CURRENT_PROJECT_VERSION: 3
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Widgets/Info.plist
         CODE_SIGN_ENTITLEMENTS: Widgets/PodTrackioWidgets.entitlements
+        SWIFT_VERSION: 6.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+
+  PodTrackioFocusMonitor:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Focus/Monitor
+      - path: Focus/Shared
+      - path: Sources/PodcastTracker/Models/FocusDayState.swift
+      - path: Sources/PodcastTracker/Models/LearningActivity.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio.focus.monitor
+        PRODUCT_NAME: PodTrackioFocusMonitor
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Focus/Monitor/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Focus/Monitor/Focus.entitlements
+        SWIFT_VERSION: 6.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+
+  PodTrackioFocusShield:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Focus/Shield
+      - path: Focus/Shared
+      - path: Sources/PodcastTracker/Models/FocusDayState.swift
+      - path: Sources/PodcastTracker/Models/LearningActivity.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio.focus.shield
+        PRODUCT_NAME: PodTrackioFocusShield
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Focus/Shield/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Focus/Shield/Focus.entitlements
+        SWIFT_VERSION: 6.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+
+  PodTrackioFocusActions:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Focus/Actions
+      - path: Focus/Shared
+      - path: Sources/PodcastTracker/Models/FocusDayState.swift
+      - path: Sources/PodcastTracker/Models/LearningActivity.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tangenix.podtrackio.focus.actions
+        PRODUCT_NAME: PodTrackioFocusActions
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Focus/Actions/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Focus/Actions/Focus.entitlements
         SWIFT_VERSION: 6.0
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -83,6 +159,9 @@ schemes:
       targets:
         PodTrackio: all
         PodTrackioWidgets: all
+        PodTrackioFocusMonitor: all
+        PodTrackioFocusShield: all
+        PodTrackioFocusActions: all
     run:
       config: Debug
     profile:

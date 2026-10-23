@@ -41,12 +41,14 @@ struct LoginView: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 Text("PodTrackio")
-                    .font(.system(size: 46, weight: .bold, design: .rounded))
+                    .font(Play.rounded(48, .black))
                 Text("Turn podcasts into\nknowledge you keep.")
                     .font(.title2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            EchoSays(mood: .happy, text: "Hi, I'm Echo! I'll keep your learning streak burning.", size: 88)
 
             VStack(alignment: .leading, spacing: 14) {
                 benefit("Keep every episode and note in one focused library", icon: "books.vertical.fill")
@@ -85,7 +87,7 @@ struct LoginView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 48)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                 .controlSize(.large)
                 .tint(.white.opacity(0.16))
                 .disabled(authManager.isSigningIn)
@@ -130,7 +132,7 @@ struct LoginView: View {
         }
         .padding(32)
         .frame(width: 420)
-        .glassEffect(.regular, in: .rect(cornerRadius: 28))
+        .chunkyCard(cornerRadius: 28)
     }
 
     private func benefit(_ title: String, icon: String) -> some View {

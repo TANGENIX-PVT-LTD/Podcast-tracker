@@ -13,6 +13,9 @@ struct MainView: View {
             }
         }
         .onOpenURL { authManager.handleCallback(url: $0) }
+        #if DEBUG
+        .task { PlayDemo.installIfRequested(viewModel, auth: authManager) }
+        #endif
         .applyingAppTheme()
     }
 
@@ -23,6 +26,10 @@ struct MainView: View {
             }
             .navigationTitle("PodTrackio")
             .listStyle(.sidebar)
+            .safeAreaInset(edge: .top) {
+                StreakBadge().padding(.horizontal, 16).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             .safeAreaInset(edge: .bottom) {
                 if viewModel.isTracking, let podcast = viewModel.selectedPodcast {
                     ActiveSessionView(podcast: podcast)
@@ -61,6 +68,9 @@ struct MainView: View {
                     SettingsLink { Label("Settings", systemImage: "gearshape") }
                 }
                 if viewModel.selectedPodcast != nil {
+                    ToolbarItem(placement: .principal) { PlayerGoalChip() }
+                }
+                if viewModel.selectedPodcast != nil {
                     ToolbarSpacer(.fixed)
                     ToolbarItem {
                         Button("Learning Inspector", systemImage: "sidebar.trailing") {
@@ -71,30 +81,18 @@ struct MainView: View {
             }
         }
         .searchable(text: $viewModel.searchText, placement: .toolbar, prompt: "Search episodes and categories")
+        .sheet(isPresented: $viewModel.showFocusGate) { FocusModeSettingsView() }
         .sheet(isPresented: $viewModel.showAddPodcast) { AddPodcastSheet() }
         .sheet(isPresented: $viewModel.showRescueSheet) { DistractionRescueSheet() }
-        .overlay(alignment: .top) { toastLayer }
+        .overlay(alignment: .top) { AchievementToast() }
+        .overlay { PlayMomentsOverlay() }
         .onChange(of: viewModel.selectedSection) { _, _ in viewModel.selectedPodcast = nil }
+        .onChange(of: viewModel.selectedPodcast?.id) { old, new in
+            if old != nil && new == nil { PlayMoments.shared.playerClosed(viewModel: viewModel) }
+        }
+        .task { PlayMoments.shared.checkFreeze(viewModel: viewModel) }
     }
 
-    @ViewBuilder private var toastLayer: some View {
-        GlassEffectContainer(spacing: 12) {
-            VStack(spacing: 8) {
-                if viewModel.showLevelUpAlert {
-                    Label("Level \(viewModel.stats.currentLevel.number) · \(viewModel.stats.currentLevel.title)", systemImage: viewModel.stats.currentLevel.iconName)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .glassEffect(.regular.tint(.accentColor), in: .capsule)
-                        .task { try? await Task.sleep(for: .seconds(3)); viewModel.showLevelUpAlert = false }
-                }
-                if viewModel.showAchievementPopup, let achievement = viewModel.newlyUnlockedAchievement {
-                    Label(achievement.title, systemImage: achievement.iconName)
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .glassEffect(.regular, in: .capsule)
-                        .task { try? await Task.sleep(for: .seconds(3)); viewModel.showAchievementPopup = false }
-                }
-            }.padding(.top, 8)
-        }
-    }
 }
 
 private struct ActiveSessionView: View {
@@ -117,7 +115,7 @@ private struct ActiveSessionView: View {
             }
         }
         .padding(12)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+        .chunkyCard(cornerRadius: 16)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Active learning session, \(podcast.title), \(viewModel.currentSessionSeconds.formattedTime)")
     }

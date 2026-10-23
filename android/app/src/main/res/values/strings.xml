@@ -2,4 +2,8 @@
     <string name="app_name">PodTrackio</string>
     <string name="notification_channel_learning">Learning reminders</string>
     <string name="notification_channel_scheduled">Scheduled episodes</string>
+    <string name="widget_title">Daily learning</string>
+    <string name="widget_status">Today’s learning goal protects it</string>
+    <string name="widget_start">Start today’s goal</string>
+    <string name="widget_description">Your learning streak, quests and a direct start to today’s goal.</string>
 </resources>

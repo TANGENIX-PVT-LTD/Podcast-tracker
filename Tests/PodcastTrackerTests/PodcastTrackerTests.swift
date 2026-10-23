@@ -84,20 +84,15 @@ struct HabitTests {
     private var calendar: Calendar { var value = Calendar(identifier: .iso8601); value.timeZone = TimeZone(secondsFromGMT: 0)!; return value }
     private func date(_ value: String) -> Date { ISO8601DateFormatter().date(from: "\(value)T12:00:00Z")! }
 
-    @Test func fiveOfSevenRaisesGoalOnceAndCaps() {
-        var settings = HabitSettings(currentDailyGoalMinutes: 55, startingDailyGoalMinutes: 15, targetDailyGoalMinutes: 60)
-        let activity = (3...7).map { DailyLearningActivity(dateKey: "2026-08-0\($0)", watchedSeconds: 900, goalMinutes: 15, goalCompleted: true) }
-        LearningCalendar.evaluateBuildUp(settings: &settings, activities: activity, now: date("2026-08-10"), calendar: calendar)
-        #expect(settings.currentDailyGoalMinutes == 60)
-        LearningCalendar.evaluateBuildUp(settings: &settings, activities: activity, now: date("2026-08-11"), calendar: calendar)
-        #expect(settings.currentDailyGoalMinutes == 60)
-    }
-
-    @Test func fourOfSevenHolds() {
-        var settings = HabitSettings()
-        let activity = (3...6).map { DailyLearningActivity(dateKey: "2026-08-0\($0)", watchedSeconds: 900, goalMinutes: 15, goalCompleted: true) }
-        LearningCalendar.evaluateBuildUp(settings: &settings, activities: activity, now: date("2026-08-10"), calendar: calendar)
-        #expect(settings.currentDailyGoalMinutes == 15)
+    @Test func adaptivePlanCapsAtSixtyMinutes() {
+        var loop = HabitLoop()
+        for offset in 0..<112 {
+            let day = LearningCalendar.dateKey(for: calendar.date(byAdding: .day, value: offset, to: date("2026-01-01"))!, calendar: calendar)
+            let goal = loop.prepareDailyGoal(day: day)
+            loop.insert(.init(id: "playback/mac/\(day)", day: day, kind: "playback", value: goal * 60))
+        }
+        let next = loop.prepareDailyGoal(day: "2026-05-01")
+        #expect(next == 60)
     }
 
     @Test func fiveMinutesQualifiesForStreak() {

@@ -10,6 +10,7 @@ enum MenuBarText {
 
 struct MenuBarLearningView: View {
     @EnvironmentObject private var viewModel: AppViewModel
+    @ObservedObject private var focus = FocusModeController.shared
 
     var body: some View {
         if viewModel.isTracking {
@@ -20,6 +21,11 @@ struct MenuBarLearningView: View {
             Label("Today · \(viewModel.todayRemainingMinutes) min left", systemImage: "target")
         }
 
+        Label("\(viewModel.stats.currentStreak)-day streak · \(viewModel.habitLoop.gems) gems", systemImage: "flame.fill")
+        if viewModel.streakProtectedToday { Label("Streak protected today", systemImage: "checkmark.shield.fill") }
+        if focus.state.enabled {
+            Text(focus.state.isLocked ? "Apps gated · \(focus.state.remainingMinutes) min left" : "Apps unlocked today")
+        }
         Divider()
 
         if let podcast = viewModel.committedPodcast ?? viewModel.selectedPodcast ?? viewModel.nextPodcast {

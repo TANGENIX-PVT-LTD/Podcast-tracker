@@ -133,10 +133,11 @@ private struct AVPlayerViewRepresentable: NSViewRepresentable {
         private let onFailure: () -> Void
 
         private var timeObserver: Any?
-        private var rateObservation: NSKeyValueObservation?
+        private var playbackObservation: NSKeyValueObservation?
         private var itemStatusObservation: NSKeyValueObservation?
         private var endObserver: NSObjectProtocol?
         private var failureObserver: NSObjectProtocol?
+        private var jumpObserver: NSObjectProtocol?
         private weak var observedPlayer: AVPlayer?
 
         init(
@@ -159,9 +160,9 @@ private struct AVPlayerViewRepresentable: NSViewRepresentable {
                     self?.onTimeUpdate(time.seconds)
                 }
             }
-            rateObservation = player.observe(\.rate, options: [.new]) { [weak self] player, _ in
+            playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 Task { @MainActor [weak self] in
-                    self?.onPlayStateChange(player.rate != 0)
+                    self?.onPlayStateChange(player.timeControlStatus == .playing)
                 }
             }
             itemStatusObservation = player.currentItem?.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
@@ -169,6 +170,9 @@ private struct AVPlayerViewRepresentable: NSViewRepresentable {
                 Task { @MainActor [weak self] in
                     self?.onFailure()
                 }
+            }
+            jumpObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: player.currentItem, queue: .main) { _ in
+                MainActor.assumeIsolated { AppViewModel.shared.resetPlaybackCredit() }
             }
             endObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemDidPlayToEndTime,
@@ -194,13 +198,15 @@ private struct AVPlayerViewRepresentable: NSViewRepresentable {
             if let timeObserver, let observedPlayer {
                 observedPlayer.removeTimeObserver(timeObserver)
             }
-            rateObservation?.invalidate()
+            playbackObservation?.invalidate()
             itemStatusObservation?.invalidate()
+            if let jumpObserver { NotificationCenter.default.removeObserver(jumpObserver) }
             if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
             if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
             timeObserver = nil
-            rateObservation = nil
+            playbackObservation = nil
             itemStatusObservation = nil
+            jumpObserver = nil
             endObserver = nil
             failureObserver = nil
             observedPlayer = nil

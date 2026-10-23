@@ -1,5 +1,6 @@
 package com.tangenix.podtrackio.domain
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -62,20 +63,19 @@ class ModelsTest {
     }
 
     @Test
-    fun `adaptive build up advances once after five successful days`() {
-        val now = LocalDate.of(2026, 9, 9)
-        val fields = WeekFields.of(Locale.getDefault())
-        val previousWeek = now.with(fields.dayOfWeek(), 1).minusDays(7)
-        val activities = (0L until 5L).map { offset ->
-            DailyLearningActivity(previousWeek.plusDays(offset).toString(), goalMinutes = 15.0, goalCompleted = true)
-        }
-        val advanced = LearningCalendar.evaluateBuildUp(
-            HabitSettings(currentDailyGoalMinutes = 15.0, targetDailyGoalMinutes = 30.0, buildUpStepMinutes = 5.0),
-            activities,
-            now,
-        )
-        assertEquals(20.0, advanced.currentDailyGoalMinutes, 0.001)
-        assertSame(advanced, LearningCalendar.evaluateBuildUp(advanced, activities, now))
+    fun `adaptive daily targets repeat twice and ignore misses`() {
+        val loop = HabitLoop()
+        assertEquals(5.0, loop.prepareDailyGoal("2026-10-20"), .001)
+        loop.insert(HabitEvent("playback/mac/2026-10-20", "2026-10-20", "playback", 300.0))
+        assertEquals(5.0, loop.prepareDailyGoal("2026-10-21"), .001)
+        loop.insert(HabitEvent("playback/phone/2026-10-21", "2026-10-21", "playback", 300.0))
+        assertEquals(6.0, loop.prepareDailyGoal("2026-10-22"), .001)
+        assertEquals(6.0, loop.prepareDailyGoal("2026-10-25"), .001)
+        loop.insert(HabitEvent("playback/mac/2026-10-25", "2026-10-25", "playback", 300.0))
+        assertFalse(loop.completedGoal("2026-10-25"))
+        loop.insert(HabitEvent("playback/phone/2026-10-25", "2026-10-25", "playback", 60.0))
+        assertTrue(loop.completedGoal("2026-10-25"))
+        assertEquals(6.0, loop.prepareDailyGoal("2026-10-25"), .001)
     }
 
     @Test

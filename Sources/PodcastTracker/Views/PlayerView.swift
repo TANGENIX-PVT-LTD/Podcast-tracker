@@ -71,11 +71,11 @@ struct PlayerView: View {
                 }
                 Spacer()
                 if currentPodcast.isCompleted { Label("Completed", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-                else { Button("Mark Complete", systemImage: "checkmark.circle") { viewModel.markCompleted(currentPodcast) }.buttonStyle(.glass) }
+                else { Button("Mark Complete", systemImage: "checkmark.circle") { viewModel.markCompleted(currentPodcast) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)) }
                 Button(currentPodcast.scheduledAt == nil ? "Schedule" : "Reschedule", systemImage: "calendar.badge.clock") {
                     showScheduleSheet = true
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                 #if !APP_STORE
                 downloadAction
                 #endif
@@ -209,15 +209,15 @@ struct PlayerView: View {
     private var downloadAction: some View {
         switch mediaStore.state(for: currentPodcast.youtubeVideoId) {
         case .notDownloaded, .failed:
-            Button("Download", systemImage: "arrow.down.circle") { downloadAndPlay() }.buttonStyle(.glass)
+            Button("Download", systemImage: "arrow.down.circle") { downloadAndPlay() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
         case .queued, .downloading:
-            Button("Cancel Download", systemImage: "xmark.circle") { viewModel.cancelDownload(currentPodcast) }.buttonStyle(.glass)
+            Button("Cancel Download", systemImage: "xmark.circle") { viewModel.cancelDownload(currentPodcast) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
         case .downloaded:
             Button("Delete Download", systemImage: "trash", role: .destructive) {
                 viewModel.deleteDownload(currentPodcast)
                 playbackSource = nil
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
         }
     }
     #endif
@@ -249,9 +249,9 @@ struct PlayerView: View {
                 Text("Streaming uses no permanent storage. Downloading makes the complete video available offline.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 HStack(spacing: 10) {
-                    Button("Stream", systemImage: "play.fill") { stream() }.buttonStyle(.glassProminent)
-                    Button("Download & Play", systemImage: "arrow.down.circle") { downloadAndPlay() }.buttonStyle(.glass)
-                    Button("Cancel") { viewModel.selectedPodcast = nil }.buttonStyle(.glass)
+                    Button("Stream", systemImage: "play.fill") { stream() }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
+                    Button("Download & Play", systemImage: "arrow.down.circle") { downloadAndPlay() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
+                    Button("Cancel") { viewModel.selectedPodcast = nil }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                 }
             }
             if let playbackChoiceError {
@@ -279,13 +279,13 @@ struct PlayerView: View {
                 Button("Retry in PodTrackio", systemImage: "arrow.clockwise") {
                     resetPlayback()
                 }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                 Button("Watch on YouTube", systemImage: "arrow.up.forward") {
                     if let url = URL(string: "https://www.youtube.com/watch?v=\(currentPodcast.youtubeVideoId)") {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -319,7 +319,7 @@ private struct CommitmentBar: View {
             }
             Button("Cancel commitment", systemImage: "xmark") { viewModel.cancelActiveCommitment() }
                 .labelStyle(.iconOnly)
-                .buttonStyle(.glass)
+                .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                 .controlSize(.small)
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -352,12 +352,12 @@ private struct CommitmentWin: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("+5") { viewModel.extendCommitment(by: 5) }.buttonStyle(.glassProminent)
-                Button("+10") { viewModel.extendCommitment(by: 10) }.buttonStyle(.glass)
-                Button("Done") { viewModel.dismissCompletedCommitment() }.buttonStyle(.glass)
+                Button("+5") { viewModel.extendCommitment(by: 5) }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
+                Button("+10") { viewModel.extendCommitment(by: 10) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
+                Button("Done") { viewModel.dismissCompletedCommitment() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 16))
+            .chunkyCard(cornerRadius: 16)
         }
         .accessibilityElement(children: .contain)
     }
@@ -418,7 +418,7 @@ private struct SummaryInspector: View {
                                             Text(point.title).font(.headline)
                                             Spacer()
                                             if let seconds = point.timestampSeconds {
-                                                Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.glass).controlSize(.small)
+                                                Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)).controlSize(.small)
                                             }
                                         }
                                         Text(point.explanation).foregroundStyle(.secondary).textSelection(.enabled)
@@ -450,7 +450,7 @@ private struct SummaryInspector: View {
     @ViewBuilder private func legacySections(_ summary: PodcastSummary) -> some View {
         SummarySection("Key topics", symbol: "timeline.selection") {
             ForEach(Array(summary.keyTopics.enumerated()), id: \.element.id) { index, topic in
-                VStack(alignment: .leading, spacing: 5) { HStack { Text("\(index + 1)").foregroundStyle(.secondary); Text(topic.title).font(.headline); Spacer(); if let seconds = topic.timestampSeconds { Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.glass).controlSize(.small) } }; Text(topic.explanation).foregroundStyle(.secondary).textSelection(.enabled) }.padding(.vertical, 5)
+                VStack(alignment: .leading, spacing: 5) { HStack { Text("\(index + 1)").foregroundStyle(.secondary); Text(topic.title).font(.headline); Spacer(); if let seconds = topic.timestampSeconds { Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)).controlSize(.small) } }; Text(topic.explanation).foregroundStyle(.secondary).textSelection(.enabled) }.padding(.vertical, 5)
             }
         }
         SummarySection("Major takeaways", symbol: "lightbulb.max") {
@@ -491,18 +491,18 @@ private struct SummaryInspector: View {
         GlassEffectContainer(spacing: 10) {
             switch viewModel.summaryState {
             case .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .synthesizing:
-                HStack { ProgressView(); Button("Cancel") { viewModel.cancelSummaryGeneration() }.buttonStyle(.glass) }
+                HStack { ProgressView(); Button("Cancel") { viewModel.cancelSummaryGeneration() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)) }
             case .needsAudioConsent:
                 HStack {
                     Button("Transcribe Audio", systemImage: "waveform") { viewModel.generateSummary(for: podcast, allowAudioTranscription: true) }
-                        .buttonStyle(.glassProminent)
-                    Button("Import Instead") { showFileImporter = true }.buttonStyle(.glass)
+                        .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
+                    Button("Import Instead") { showFileImporter = true }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                 }
             case .needsTranscriptImport:
-                HStack { Button("Paste") { showPasteSheet = true }.buttonStyle(.glassProminent); Button("Import") { showFileImporter = true }.buttonStyle(.glass) }
+                HStack { Button("Paste") { showPasteSheet = true }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false)); Button("Import") { showFileImporter = true }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)) }
             default:
                 Button("Generate Summary", systemImage: "sparkles") { viewModel.generateSummary(for: podcast) }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
             }
         }
     }
@@ -850,7 +850,7 @@ private struct PasteTranscriptSheet: View {
                         Button("Summarize") {
                             let document = TranscriptImporter.document(text: text, podcastID: podcast.id)
                             viewModel.generateSummary(for: podcast, transcript: document); dismiss()
-                        }.buttonStyle(.glassProminent).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false)).disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
         }.frame(width: 680, height: 520)

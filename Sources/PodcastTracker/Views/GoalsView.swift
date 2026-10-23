@@ -4,17 +4,18 @@ struct LearningProgressView: View {
     @EnvironmentObject private var viewModel: AppViewModel
     @State private var displayedMonth = Date()
     @State private var showScheduleSheet = false
+    @State private var showStreak = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("Learning, measured honestly").font(.largeTitle.bold())
-                        Text("Minutes first. XP and levels are supporting signals.").foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    LevelSummary()
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Your progress").font(Play.rounded(34, .black))
+                    Text("Minutes first. XP and levels are supporting signals.").foregroundStyle(.secondary)
+                }
+                HStack(alignment: .top, spacing: 18) {
+                    StreakHero { showStreak = true }
+                    VStack(spacing: 18) { LevelCard(); LeagueCard() }
                 }
                 calendar
                 goals
@@ -22,6 +23,7 @@ struct LearningProgressView: View {
                 AchievementsView()
             }.padding(28).frame(maxWidth: 1080, alignment: .leading)
         }
+        .sheet(isPresented: $showStreak) { StreakDetailView() }
         .sheet(isPresented: $showScheduleSheet) {
             ScheduleDaySheet(day: viewModel.selectedCalendarDate).environmentObject(viewModel)
         }
@@ -30,7 +32,7 @@ struct LearningProgressView: View {
     private var calendar: some View {
         VStack(spacing: 16) {
             HStack {
-                Text(displayedMonth.formatted(.dateTime.month(.wide).year())).font(.title2.bold())
+                Text(displayedMonth.formatted(.dateTime.month(.wide).year())).font(Play.rounded(22, .heavy))
                 Spacer()
                 Button("Previous Month", systemImage: "chevron.left") { shiftMonth(-1) }.labelStyle(.iconOnly)
                 Button("Today") { displayedMonth = Date(); viewModel.selectedCalendarDate = Date() }
@@ -39,7 +41,8 @@ struct LearningProgressView: View {
             MonthGrid(
                 month: displayedMonth,
                 selection: $viewModel.selectedCalendarDate,
-                activities: viewModel.activities,
+                learned: viewModel.habitLoop.learningDays(activities: viewModel.activities),
+                frozen: viewModel.habitStreakStatus.frozenDays,
                 scheduledDates: viewModel.podcasts.compactMap(\.scheduledAt)
             )
             if let day = viewModel.activity(for: viewModel.selectedCalendarDate) {
@@ -57,7 +60,7 @@ struct LearningProgressView: View {
                 Text("Scheduled").font(.headline)
                 Spacer()
                 Button("Add Podcast", systemImage: "calendar.badge.plus") { showScheduleSheet = true }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
             }
             let scheduled = viewModel.scheduledPodcasts(on: viewModel.selectedCalendarDate)
             if scheduled.isEmpty {
@@ -73,18 +76,18 @@ struct LearningProgressView: View {
                             }
                         }
                         Spacer()
-                        Button("Open") { viewModel.selectPodcast(podcast) }.buttonStyle(.glass)
+                        Button("Open") { viewModel.selectPodcast(podcast) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                         Button("Remove Schedule", systemImage: "xmark") { viewModel.removeSchedule(for: podcast) }
-                            .labelStyle(.iconOnly).buttonStyle(.glass)
+                            .labelStyle(.iconOnly).buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                     }
                 }
             }
-        }.padding(20).background(.quaternary.opacity(0.28), in: .rect(cornerRadius: 18))
+        }.padding(20).chunkyCard(cornerRadius: 20)
     }
 
     private var goals: some View {
         HStack(spacing: 16) {
-            GoalCard(title: "Daily", value: viewModel.todayActivity?.watchedSeconds ?? 0, target: viewModel.habitSettings.currentDailyGoalMinutes * 60, label: "\(viewModel.todayWatchedMinutes) / \(Int(viewModel.habitSettings.currentDailyGoalMinutes)) min")
+            GoalCard(title: "Daily", value: viewModel.habitLoop.learnedSeconds(on: LearningCalendar.dateKey(for: Date())), target: viewModel.habitSettings.currentDailyGoalMinutes * 60, label: "\(viewModel.todayWatchedMinutes) / \(Int(viewModel.habitSettings.currentDailyGoalMinutes)) min")
             GoalCard(title: "Weekly", value: viewModel.stats.weeklySecondsWatched, target: viewModel.stats.weeklyGoalHours * 3600, label: "\(viewModel.stats.formattedWeeklyTime) / \(viewModel.stats.weeklyGoalHours.formatted())h")
         }
     }
@@ -108,7 +111,7 @@ private struct ReplacementReview: View {
                 }
                 Spacer()
                 Button("Rescue Me", systemImage: "bolt.fill") { viewModel.showRescueSheet = true }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                     .disabled(viewModel.nextPodcast == nil)
             }
 
@@ -149,35 +152,22 @@ private struct ReplacementReview: View {
     }
 }
 
-private struct LevelSummary: View {
-    @EnvironmentObject private var viewModel: AppViewModel
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: viewModel.stats.currentLevel.iconName).font(.title2).foregroundStyle(.tint)
-            VStack(alignment: .leading) {
-                Text("Level \(viewModel.stats.currentLevel.number) · \(viewModel.stats.currentLevel.title)").font(.headline)
-                ProgressView(value: viewModel.stats.levelProgress).frame(width: 180)
-                Text("\(viewModel.stats.totalXP) total XP").font(.caption).foregroundStyle(.secondary)
-            }
-        }.padding(14).glassEffect(.regular, in: .rect(cornerRadius: 16))
-    }
-}
-
 private struct GoalCard: View {
     let title: String; let value: Double; let target: Double; let label: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
-            ProgressView(value: min(value / max(target, 1), 1))
-            Text(label).font(.caption).foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(.quaternary.opacity(0.28), in: .rect(cornerRadius: 16))
+            Text(title.uppercased()).font(Play.rounded(13, .heavy)).tracking(0.8).foregroundStyle(.secondary)
+            PlayProgressBar(value: min(value / max(target, 1), 1), tint: title == "Daily" ? Play.Palette.flame : Play.Palette.gem, height: 12)
+            Text(label).font(Play.rounded(14, .bold))
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(18).chunkyCard(cornerRadius: 18)
     }
 }
 
 private struct MonthGrid: View {
     let month: Date
     @Binding var selection: Date
-    let activities: [DailyLearningActivity]
+    let learned: Set<String>
+    let frozen: Set<String>
     let scheduledDates: [Date]
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 5), count: 7)
     private var days: [Date?] {
@@ -189,35 +179,21 @@ private struct MonthGrid: View {
         return blanks + range.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: interval.start) }.map(Optional.some)
     }
     var body: some View {
-        VStack(spacing: 7) {
-            LazyVGrid(columns: columns) {
-                ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { Text($0).font(.caption2).foregroundStyle(.secondary) }
-                ForEach(Array(days.enumerated()), id: \.offset) { _, date in
-                    if let date { dayButton(date) } else { Color.clear.frame(height: 42) }
-                }
+        LazyVGrid(columns: columns, spacing: 6) {
+            ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { Text($0.uppercased()).font(Play.rounded(11, .heavy)).foregroundStyle(.secondary) }
+            ForEach(Array(days.enumerated()), id: \.offset) { _, date in
+                if let date { dayButton(date) } else { Color.clear.frame(height: 40) }
             }
         }
     }
     private func dayButton(_ date: Date) -> some View {
         let key = LearningCalendar.dateKey(for: date)
-        let activity = activities.first { $0.dateKey == key }
-        let isScheduled = scheduledDates.contains { Calendar.current.isDate($0, inSameDayAs: date) }
-        let selected = Calendar.current.isDate(date, inSameDayAs: selection)
-        return Group {
-            if selected { dayButtonLabel(date, activity: activity, isScheduled: isScheduled).buttonStyle(.glassProminent) }
-            else { dayButtonLabel(date, activity: activity, isScheduled: isScheduled).buttonStyle(.plain) }
-        }.accessibilityLabel(date.formatted(date: .complete, time: .omitted))
-    }
-
-    private func dayButtonLabel(_ date: Date, activity: DailyLearningActivity?, isScheduled: Bool) -> some View {
-        Button { selection = date } label: {
-            VStack(spacing: 3) {
-                Text("\(Calendar.current.component(.day, from: date))").monospacedDigit()
-                HStack(spacing: 3) {
-                    Circle().fill(activity?.goalCompleted == true ? Color.green : activity == nil ? Color.clear : Color.accentColor).frame(width: 5, height: 5)
-                    Circle().fill(isScheduled ? Color.orange : Color.clear).frame(width: 5, height: 5)
-                }
-            }.frame(maxWidth: .infinity, minHeight: 38)
+        return Button { selection = date; PlayFeedback.play(.select, sound: false) } label: {
+            PlayCalendarDay(day: Calendar.current.component(.day, from: date), learned: learned.contains(key), frozen: frozen.contains(key),
+                            scheduled: scheduledDates.contains { Calendar.current.isDate($0, inSameDayAs: date) },
+                            selected: Calendar.current.isDate(date, inSameDayAs: selection), isToday: Calendar.current.isDateInToday(date))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
     }
 }

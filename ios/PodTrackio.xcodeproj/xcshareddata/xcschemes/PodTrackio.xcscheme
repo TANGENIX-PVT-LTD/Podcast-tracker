@@ -29,6 +29,48 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "D3CCFE95F6377EEB4815CC34"
+               BuildableName = "PodTrackioFocusActions.appex"
+               BlueprintName = "PodTrackioFocusActions"
+               ReferencedContainer = "container:PodTrackio.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "86E625F348D3FE6CEEF7A50B"
+               BuildableName = "PodTrackioFocusMonitor.appex"
+               BlueprintName = "PodTrackioFocusMonitor"
+               ReferencedContainer = "container:PodTrackio.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C9B780FC8FFBB7268EB66D13"
+               BuildableName = "PodTrackioFocusShield.appex"
+               BlueprintName = "PodTrackioFocusShield"
+               ReferencedContainer = "container:PodTrackio.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "CD2FBFEC74E4D7F3598C04C4"
                BuildableName = "PodTrackioWidgets.appex"
                BlueprintName = "PodTrackioWidgets"

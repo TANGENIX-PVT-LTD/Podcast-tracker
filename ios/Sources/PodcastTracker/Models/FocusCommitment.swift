@@ -85,8 +85,12 @@ struct FocusCommitment: Identifiable, Codable, Equatable, Sendable {
 
     /// Returns true only on the transition from active to completed.
     mutating func recordWatchedSecond(now: Date = Date()) -> Bool {
-        guard isActive else { return false }
-        watchedSeconds = min(watchedSeconds + 1, targetSeconds)
+        recordWatched(seconds: 1, now: now)
+    }
+
+    mutating func recordWatched(seconds: Double, now: Date = Date()) -> Bool {
+        guard isActive, seconds.isFinite, seconds > 0 else { return false }
+        watchedSeconds = min(watchedSeconds + seconds, targetSeconds)
         guard watchedSeconds >= targetSeconds else { return false }
         completedAt = now
         return true

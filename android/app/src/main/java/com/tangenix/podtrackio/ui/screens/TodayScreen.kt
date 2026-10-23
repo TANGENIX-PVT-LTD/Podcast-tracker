@@ -58,8 +58,6 @@ import com.tangenix.podtrackio.domain.DistractionCue
 import com.tangenix.podtrackio.domain.FocusCommitment
 import com.tangenix.podtrackio.domain.formatDuration
 import com.tangenix.podtrackio.domain.todayKey
-import com.tangenix.podtrackio.ui.components.EpisodeRow
-import com.tangenix.podtrackio.ui.components.MetricCard
 import coil3.compose.AsyncImage
 import java.time.Instant
 import java.time.LocalDate
@@ -67,69 +65,43 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import com.tangenix.podtrackio.ui.play.*
 
 @Composable
 fun TodayScreen(ui: PodTrackioUiState, viewModel: PodTrackioViewModel, onAdd: () -> Unit) {
     val snapshot = ui.snapshot
-    val today = snapshot.activities.firstOrNull { it.dateKey == todayKey() }
-    val resume = snapshot.podcasts.filter { it.hasProgress }.sortedByDescending { it.lastWatchedDate }.take(1)
-    val scheduled = snapshot.podcasts.filter { !it.isCompleted && it.scheduledAt != null }.sortedBy { it.scheduledAt }.take(1)
-    val nextPodcast = (resume + scheduled).distinctBy { it.id }.firstOrNull()
+    val resume = snapshot.podcasts.filter { it.hasProgress && !it.isCompleted }.sortedByDescending { it.lastWatchedDate }
+    val nextPodcast = resume.firstOrNull() ?: snapshot.podcasts.filter { !it.isCompleted }.minByOrNull { it.dateAdded }
     var rescue by remember { mutableStateOf(false) }
+    val insights = computeRescueInsights(snapshot.focusCommitments)
+    val info = remember(snapshot.habitLoop, snapshot.activities, snapshot.stats) { snapshot.streakInfo() }
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
 
-    // Compute rescue insights from focus commitments
-    val rescueInsights = computeRescueInsights(snapshot.focusCommitments)
-
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 28.dp, vertical = 28.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(28.dp),
-            horizontalAlignment = Alignment.Start
-        ) {
-            // Header - matches macOS header
-            TodayHeader(
-                todayRemainingMinutes = ((snapshot.stats.dailyGoalMinutes * 60 - (today?.watchedSeconds ?: snapshot.stats.dailySecondsWatched)) / 60).coerceAtLeast(0.0).toInt(),
-                isComplete = (today?.watchedSeconds ?: snapshot.stats.dailySecondsWatched) >= snapshot.stats.dailyGoalMinutes * 60
-            )
-
-            // Rescue Card - matches macOS rescueCard
-            RescueCard(
-                insights = rescueInsights,
-                hasNextPodcast = nextPodcast != null,
-                onRescueClick = { rescue = true }
-            )
-
-            // Next Episode - matches macOS nextEpisode
-            nextPodcast?.let { podcast ->
-                NextEpisodeCard(
-                    podcast = podcast,
-                    category = snapshot.categories.firstOrNull { it.id == podcast.categoryId },
-                    onResume = { viewModel.selectPodcast(podcast.id) },
-                    onRescue = {
-                        viewModel.startRescue(podcast.id, 5, DistractionCue.TODAY)
-                    }
-                )
-            } ?: ContentUnavailableView(
-                title = "Build your learning queue",
-                subtitle = "Add an educational episode to begin.",
-                onAddClick = onAdd
-            )
-
-            // Metrics Grid - matches macOS LazyVGrid with 3 columns
-            MetricsGrid(
-                todayWatchedMinutes = ((today?.watchedSeconds ?: snapshot.stats.dailySecondsWatched) / 60).toInt(),
-                todayRemainingMinutes = ((snapshot.stats.dailyGoalMinutes * 60 - (today?.watchedSeconds ?: snapshot.stats.dailySecondsWatched)) / 60).coerceAtLeast(0.0).toInt(),
-                currentStreak = snapshot.stats.currentStreak,
-                dailyGoalMinutes = snapshot.stats.dailyGoalMinutes.toInt(),
-                dailyProgress = snapshot.stats.dailyProgress,
-                adaptiveEnabled = snapshot.habitSettings.adaptiveBuildUpEnabled
-            )
-
-            // Recent Activity - matches macOS recentActivity
-            RecentActivitySection(activities = snapshot.activities)
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val wide = maxWidth > 900.dp
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(Modifier.staggered(0, appeared), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM")).uppercase(), style = playType(13),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+                val line = echoLine(info, snapshot.podcasts.isEmpty(), snapshot.habitLoop.questCount(todayKey()))
+                EchoSays(line.first, line.second, size = 96.dp)
+            }
+            if (wide) Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Column(Modifier.weight(1.3f), verticalArrangement = Arrangement.spacedBy(18.dp)) { PrimaryColumn(ui, viewModel, nextPodcast, insights, appeared, onAdd) { rescue = true } }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) { SecondaryColumn(ui, appeared) }
+            } else {
+                PrimaryColumn(ui, viewModel, nextPodcast, insights, appeared, onAdd) { rescue = true }
+                SecondaryColumn(ui, appeared)
+            }
         }
     }
 
@@ -138,6 +110,86 @@ fun TodayScreen(ui: PodTrackioUiState, viewModel: PodTrackioViewModel, onAdd: ()
         onDismiss = { rescue = false },
         onStart = { id, minutes, cue -> viewModel.startRescue(id, minutes, cue); rescue = false },
     )
+}
+
+/** Echo's line for today: warm, specific, never guilt-tripping. */
+private fun echoLine(info: StreakInfo, empty: Boolean, quests: Int): Pair<EchoMood, String> {
+    val left = (info.goalMinutes - info.watchedMinutes).coerceAtLeast(0)
+    val hour = java.time.LocalTime.now().hour
+    return when {
+        empty -> EchoMood.HAPPY to "Add one episode you're curious about. I'll keep you company!"
+        info.protected && quests < 3 -> EchoMood.PROUD to "Streak safe! ${3 - quests} quest${if (3 - quests == 1) "" else "s"} left, then the chest is yours."
+        info.protected -> EchoMood.CHEER to "Everything done today. You're on fire!"
+        info.atRisk -> EchoMood.WORRIED to "Just $left minute${if (left == 1) "" else "s"} keeps your ${info.count}-day flame alive. We've got this!"
+        info.count == 0 -> EchoMood.HAPPY to "Let's light your first flame. $left minutes is all it takes."
+        LocalDate.now().dayOfWeek == java.time.DayOfWeek.MONDAY && hour < 14 -> EchoMood.HAPPY to "Fresh week, fresh league. $left minutes starts it strong."
+        hour < 12 -> EchoMood.HAPPY to "Morning! $left minutes keeps your ${info.count}-day streak growing."
+        else -> EchoMood.IDLE to "$left minutes to protect day ${info.count + 1}. Ready when you are."
+    }
+}
+
+@Composable
+private fun PrimaryColumn(ui: PodTrackioUiState, viewModel: PodTrackioViewModel, next: com.tangenix.podtrackio.domain.Podcast?, insights: RescueInsights,
+                          appeared: Boolean, onAdd: () -> Unit, onRescue: () -> Unit) {
+    Box(Modifier.staggered(1, appeared)) { HabitLoopPanel(ui, viewModel) }
+    if (next != null) Row(Modifier.staggered(2, appeared).fillMaxWidth().chunkyCard(22.dp).padding(14.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            AsyncImage(next.thumbnailUrl, next.title, Modifier.width(200.dp).height(112.dp).clip(RoundedCornerShape(14.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            Text(if (next.hasProgress) "CONTINUE" else "UP NEXT", Modifier.padding(8.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary).padding(horizontal = 8.dp, vertical = 3.dp),
+                style = playType(11), color = Color.White)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(next.title, style = playType(19, FontWeight.ExtraBold), maxLines = 2)
+            if (next.hasProgress) PlayProgressBar(next.progress.toFloat(), tint = MaterialTheme.colorScheme.primary, height = 10.dp)
+            ChunkyButton(if (next.hasProgress) "Continue learning" else "Start learning", { viewModel.selectPodcast(next.id) }, small = true, fullWidth = false, icon = Icons.Rounded.PlayArrow)
+        }
+    } else Column(Modifier.staggered(2, appeared).fillMaxWidth().chunkyCard(22.dp).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Echo(EchoMood.HAPPY, 110.dp)
+        Text("Build your learning queue", style = playType(22))
+        ChunkyButton("Add your first episode", onAdd, fullWidth = false, icon = Icons.Rounded.Add)
+    }
+    Row(Modifier.staggered(3, appeared).fillMaxWidth().chunkyCard(20.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(Palette.flame), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Bolt, null, tint = Color.White) }
+        Column(Modifier.weight(1f)) {
+            Text("About to waste time?", style = playType(17))
+            Text(if (insights.attempts > 0) "${insights.completed} kept · ${insights.reclaimedMinutes} min reclaimed this week" else "Swap the impulse for one honest 5-minute win.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .6f))
+        }
+        ChunkyButton("Rescue", onRescue, kind = ChunkyKind.FLAME, small = true, fullWidth = false, enabled = next != null)
+    }
+}
+
+@Composable
+private fun SecondaryColumn(ui: PodTrackioUiState, appeared: Boolean) {
+    val snapshot = ui.snapshot
+    Box(Modifier.staggered(2, appeared)) { LevelCard(snapshot.stats) }
+    Box(Modifier.staggered(3, appeared)) { LeagueCard(snapshot.habitLoop.league(snapshot.activities)) }
+    val learned = snapshot.habitLoop.learningDays(snapshot.activities)
+    Column(Modifier.staggered(4, appeared).fillMaxWidth().chunkyCard(20.dp).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Recent activity", style = playType(20))
+        if (snapshot.activities.isEmpty()) Text("Your accurate daily history begins here.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .6f))
+        snapshot.activities.sortedByDescending { it.dateKey }.take(5).forEach { day ->
+            val done = day.dateKey in learned
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(28.dp).clip(CircleShape).background(if (done) Palette.flame else Palette.ash), contentAlignment = Alignment.Center) {
+                    Icon(if (done) Icons.Rounded.LocalFireDepartment else Icons.Rounded.Bedtime, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+                Text(day.dateKey, Modifier.weight(1f), style = playType(14, FontWeight.Bold))
+                Text("${(maxOf(day.watchedSeconds, snapshot.habitLoop.learnedSeconds(day.dateKey)) / 60).toInt()} min", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .6f))
+                Text("+${day.xpEarned} XP", style = playType(13), color = Palette.goldLip)
+            }
+        }
+    }
+}
+
+/** Cards rise in one after another on first appearance. */
+@Composable
+fun Modifier.staggered(index: Int, appeared: Boolean): Modifier {
+    val progress by animateFloatAsState(if (appeared) 1f else 0f, spring(dampingRatio = .8f, stiffness = 220f), label = "stagger$index")
+    var delayed by remember { mutableStateOf(false) }
+    LaunchedEffect(appeared) { if (appeared) { kotlinx.coroutines.delay(index * 60L); delayed = true } }
+    val p = if (delayed) progress else 0f
+    return this.graphicsLayer { alpha = p; translationY = (1 - p) * 18 * density }
 }
 
 private fun computeRescueInsights(commitments: List<FocusCommitment>): RescueInsights {
@@ -157,237 +209,3 @@ data class RescueInsights(
     val reclaimedMinutes: Int,
 )
 
-@Composable
-private fun TodayHeader(
-    todayRemainingMinutes: Int,
-    isComplete: Boolean,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(
-            LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.getDefault())),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            if (isComplete) "Today's learning is complete."
-            else "Make the next $todayRemainingMinutes minutes count.",
-            style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold),
-        )
-    }
-}
-
-@Composable
-private fun RescueCard(
-    insights: RescueInsights,
-    hasNextPodcast: Boolean,
-    onRescueClick: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Box(
-                modifier = Modifier.size(34.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Rounded.Bolt,
-                    null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(34.dp)
-                )
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("About to waste time?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Name the impulse. Replace it with one small learning win.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (insights.attempts > 0) {
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("${insights.completed} kept · ${insights.reclaimedMinutes} min", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                    Text("replaced this week", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Button(
-                onClick = onRescueClick,
-                enabled = hasNextPodcast,
-                modifier = Modifier.height(40.dp),
-            ) {
-                Icon(Icons.Rounded.Bolt, null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Rescue Me")
-            }
-        }
-    }
-}
-
-@Composable
-private fun NextEpisodeCard(
-    podcast: com.tangenix.podtrackio.domain.Podcast,
-    category: com.tangenix.podtrackio.domain.LearningCategory?,
-    onResume: () -> Unit,
-    onRescue: () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(22.dp),
-        ) {
-            // Thumbnail
-            AsyncImage(
-                model = podcast.thumbnailUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(width = 220.dp, height = 124.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
-
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("UP NEXT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(podcast.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), maxLines = 2)
-                LinearProgressIndicator(progress = podcast.progress, modifier = Modifier.fillMaxWidth())
-
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = onResume) {
-                        Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Resume")
-                    }
-                    OutlinedButton(onClick = onRescue) {
-                        Icon(Icons.Rounded.Timer, null, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Start 5 Minutes")
-                    }
-                }
-            }
-            Spacer(Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-private fun MetricsGrid(
-    todayWatchedMinutes: Int,
-    todayRemainingMinutes: Int,
-    currentStreak: Int,
-    dailyGoalMinutes: Int,
-    dailyProgress: Float,
-    adaptiveEnabled: Boolean,
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxWidth().height(160.dp),
-    ) {
-        items(listOf(
-            TodayMetricData("Today", "$todayWatchedMinutes min", "$todayRemainingMinutes remaining", Icons.Rounded.Timer, dailyProgress),
-            TodayMetricData("Streak", "$currentStreak days", "5 minutes keeps it alive", Icons.Rounded.LocalFireDepartment, null),
-            TodayMetricData("Daily Goal", "${dailyGoalMinutes} min/day", if (adaptiveEnabled) "Adapts each week" else "Fixed target", Icons.Rounded.PlayArrow, null),
-        )) { metric ->
-            MetricCard(metric)
-        }
-    }
-}
-
-@Composable
-private fun MetricCard(metric: TodayMetricData) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            horizontalAlignment = Alignment.Start,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(metric.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(metric.title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(metric.value, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-            Text(metric.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            metric.progress?.let {
-                LinearProgressIndicator(progress = it, modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(50.dp)))
-            }
-        }
-    }
-}
-
-private data class TodayMetricData(
-    val title: String,
-    val value: String,
-    val detail: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val progress: Float? = null,
-)
-
-@Composable
-private fun RecentActivitySection(activities: List<com.tangenix.podtrackio.domain.DailyLearningActivity>) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Recent activity", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (activities.isEmpty()) {
-            Text("Your accurate daily history begins here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            activities
-                .sortedByDescending { it.dateKey }
-                .take(5)
-                .forEach { day ->
-                    val date = LocalDate.parse(day.dateKey)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Icon(
-                            if (day.goalCompleted) Icons.Rounded.CheckCircle else Icons.Rounded.CheckCircle,
-                            null,
-                            tint = if (day.goalCompleted) Color(0xFF2E8B57) else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(date.format(java.time.format.DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())))
-                        Spacer(Modifier.weight(1f))
-                        Text("${(day.watchedSeconds / 60).toInt()} min · ${day.xpEarned} XP", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-        }
-    }
-}
-
-@Composable
-private fun ContentUnavailableView(title: String, subtitle: String, onAddClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        shape = RoundedCornerShape(18.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Icon(Icons.Rounded.NorthEast, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(48.dp))
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            Button(onClick = onAddClick) { Text("Add your first episode") }
-        }
-    }
-}

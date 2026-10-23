@@ -9,8 +9,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class LocalStore(context: Context) {
+class LocalStore(private val context: Context) {
     private val mutex = Mutex()
+    private var unreadableSnapshot = false
+    private val unreadableHabitFiles = mutableSetOf<String>()
     private val file = AtomicFile(File(context.filesDir, "podtrackio_state.json"))
 
     suspend fun load(): AppSnapshot = withContext(Dispatchers.IO) {
@@ -20,20 +22,60 @@ class LocalStore(context: Context) {
                 file.openRead().bufferedReader().use { reader ->
                     Json.gson.fromJson(reader, AppSnapshot::class.java)
                 }
-            }.getOrNull()?.sanitized() ?: AppSnapshot()
+            }.onFailure { unreadableSnapshot = true }.getOrNull()?.sanitized() ?: AppSnapshot()
         }
     }
 
     suspend fun save(snapshot: AppSnapshot) = withContext(Dispatchers.IO) {
         mutex.withLock {
+            check(!unreadableSnapshot) { "Unreadable workspace was preserved; restore it before saving." }
             val stream = file.startWrite()
             try {
-                stream.bufferedWriter().use { writer -> Json.gson.toJson(snapshot.sanitized(), writer) }
+                stream.write(Json.gson.toJson(snapshot.sanitized()).toByteArray(Charsets.UTF_8))
                 file.finishWrite(stream)
             } catch (error: Throwable) {
                 file.failWrite(stream)
                 throw error
             }
+            saveHabitFile(snapshot.habitLoop)
+            runCatching { com.tangenix.podtrackio.widgets.LearningWidgetProvider.updateAll(context, snapshot) }
+        }
+    }
+
+    private fun habitFile(ownerID: String?): AtomicFile {
+        val suffix = ownerID?.let { java.util.UUID.fromString(it).toString() } ?: "guest"
+        return AtomicFile(File(context.filesDir, "habit_loop_$suffix.json"))
+    }
+
+    private fun saveHabitFile(loop: com.tangenix.podtrackio.domain.HabitLoop) {
+        val target = habitFile(loop.ownerID)
+        check(target.baseFile.path !in unreadableHabitFiles) { "Unreadable habit data was preserved; restore it before saving." }
+        val output = target.startWrite()
+        try {
+            output.write(Json.gson.toJson(loop).toByteArray(Charsets.UTF_8))
+            target.finishWrite(output)
+        } catch (error: Throwable) { target.failWrite(output); throw error }
+    }
+
+    suspend fun bindHabitOwner(ownerID: String?, fallback: com.tangenix.podtrackio.domain.HabitLoop): com.tangenix.podtrackio.domain.HabitLoop = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val target = habitFile(ownerID)
+            if (target.baseFile.exists()) {
+                try {
+                    val result = target.openRead().bufferedReader().use { Json.gson.fromJson(it, com.tangenix.podtrackio.domain.HabitLoop::class.java) }
+                    check(result.ownerID == ownerID) { "Habit owner does not match." }
+                    return@withLock result
+                } catch (error: Throwable) { unreadableHabitFiles.add(target.baseFile.path); throw error }
+            }
+            if (fallback.ownerID == ownerID || fallback.ownerID == null) {
+                val claimed = fallback.copy(ownerID = ownerID)
+                saveHabitFile(claimed)
+                if (ownerID != null && fallback.ownerID == null) {
+                    val guest = habitFile(null).baseFile
+                    if (guest.exists()) check(guest.renameTo(File(guest.path + ".claimed-" + java.util.UUID.randomUUID())))
+                }
+                claimed
+            } else com.tangenix.podtrackio.domain.HabitLoop(ownerID = ownerID)
         }
     }
 

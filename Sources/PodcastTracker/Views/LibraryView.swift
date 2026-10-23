@@ -45,15 +45,15 @@ struct LibraryView: View {
                 ScrollView(.horizontal) {
                     HStack(spacing: 8) {
                     if viewModel.selectedCategoryID == nil {
-                        Button("All") { viewModel.selectedCategoryID = nil }.buttonStyle(.glassProminent)
+                        Button("All") { viewModel.selectedCategoryID = nil }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                     } else {
-                        Button("All") { viewModel.selectedCategoryID = nil }.buttonStyle(.glass)
+                        Button("All") { viewModel.selectedCategoryID = nil }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                     }
                     ForEach(viewModel.categories) { category in
                         if viewModel.selectedCategoryID == category.id {
-                            categoryButton(category).buttonStyle(.glassProminent).tint(category.color)
+                            categoryButton(category).buttonStyle(.chunky(.primary, size: .small, fullWidth: false)).tint(category.color)
                         } else {
-                            categoryButton(category).buttonStyle(.glass).tint(category.color)
+                            categoryButton(category).buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)).tint(category.color)
                         }
                     }
                     }.padding(.horizontal, 16).padding(.top, 12)
@@ -64,15 +64,15 @@ struct LibraryView: View {
                             Label("Collections", systemImage: "rectangle.stack")
                                 .font(.caption).foregroundStyle(.secondary)
                             if viewModel.selectedCollectionID == nil {
-                                Button("All Collections") { viewModel.selectedCollectionID = nil }.buttonStyle(.glassProminent)
+                                Button("All Collections") { viewModel.selectedCollectionID = nil }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                             } else {
-                                Button("All Collections") { viewModel.selectedCollectionID = nil }.buttonStyle(.glass)
+                                Button("All Collections") { viewModel.selectedCollectionID = nil }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                             }
                             ForEach(viewModel.collections.sorted(by: { $0.sortOrder < $1.sortOrder })) { collection in
                                 if viewModel.selectedCollectionID == collection.id {
-                                    Button(collection.title) { viewModel.selectedCollectionID = nil }.buttonStyle(.glassProminent)
+                                    Button(collection.title) { viewModel.selectedCollectionID = nil }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                                 } else {
-                                    Button(collection.title) { viewModel.selectedCollectionID = collection.id }.buttonStyle(.glass)
+                                    Button(collection.title) { viewModel.selectedCollectionID = collection.id }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
                                 }
                             }
                         }.padding(.horizontal, 16).padding(.bottom, 12)

@@ -70,6 +70,20 @@ class SupabaseApi(
         upsertRows("user_stats", listOf(statsToJson(stats, userId)))
     }
 
+    suspend fun syncHabitLoop(loop: com.tangenix.podtrackio.domain.HabitLoop, purchase: String? = null, purchaseId: String? = null): com.tangenix.podtrackio.domain.HabitSyncResponse {
+        check(loop.ownerID?.lowercase() == auth.state.value.profile?.id?.lowercase()) { "Reopen this account's habit workspace before syncing." }
+        val body = JsonObject().apply {
+            // shortcut: sync exchanges the full private ledger, add cursors when histories make responses costly.
+            add("_events", Json.gson.toJsonTree(loop.events))
+            addProperty("_day", java.time.LocalDate.now().toString())
+            addProperty("_legacy_xp", loop.legacyXP); addProperty("_started_day", loop.startedDay)
+            add("_purchase", purchase?.let(::JsonPrimitive) ?: JsonNull.INSTANCE)
+            add("_purchase_id", purchaseId?.let(::JsonPrimitive) ?: JsonNull.INSTANCE)
+        }
+        val response = request("/rest/v1/rpc/sync_habit_loop", "POST", body)
+        return Json.gson.fromJson(response, com.tangenix.podtrackio.domain.HabitSyncResponse::class.java)
+    }
+
     suspend fun pushPodcast(userId: String, podcast: Podcast, categories: List<LearningCategory>) {
         upsertRows("podcasts", listOf(podcastToJson(podcast, userId, categories)))
     }

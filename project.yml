@@ -39,8 +39,8 @@ targets:
         PRODUCT_MODULE_NAME: PodcastTracker
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: 1.0
-        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 3.0
+        CURRENT_PROJECT_VERSION: 3
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AppStore/Info.plist
         CODE_SIGN_ENTITLEMENTS: AppStore/PodTrackio.entitlements

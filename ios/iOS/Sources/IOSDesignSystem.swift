@@ -94,50 +94,13 @@ struct IOSLoadingStatus: View {
     }
 }
 
+/// Flat container on the page, outlined like Duolingo's iOS app. Lift is reserved for buttons.
 private struct PodCardModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
     let cornerRadius: CGFloat
     let isSoft: Bool
 
     func body(content: Content) -> some View {
-        content
-            .background {
-                if #available(iOS 26.0, *) {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color.clear)
-                        .glassEffect(
-                            .clear,
-                            in: .rect(cornerRadius: cornerRadius, style: .continuous)
-                        )
-                } else {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(fallbackFill)
-                        .shadow(
-                            color: colorScheme == .light ? Color.black.opacity(isSoft ? 0.03 : 0.05) : .clear,
-                            radius: isSoft ? 6 : 8,
-                            y: 2
-                        )
-                }
-            }
-            .overlay {
-                if #unavailable(iOS 26.0) {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .light
-                                ? Color.black.opacity(isSoft ? 0.06 : 0.08)
-                                : Color.white.opacity(0.10),
-                            lineWidth: 1
-                        )
-                }
-            }
-    }
-
-    private var fallbackFill: Color {
-        if colorScheme == .light {
-            return Color(isSoft ? .secondarySystemBackground : .systemBackground)
-                .opacity(isSoft ? 0.70 : 0.85)
-        }
-        return Color.white.opacity(isSoft ? 0.06 : 0.07)
+        content.outlined(cornerRadius)
     }
 }
 
@@ -192,7 +155,7 @@ struct SectionTitle: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.title2.bold())
+            Text(title).font(.title3.bold())
             if let subtitle { Text(subtitle).font(.subheadline).foregroundStyle(.secondary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

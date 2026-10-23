@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NotificationCenter.default.addObserver(forName: .showFocusLearningGate, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in AppViewModel.shared.showFocusGate = true; self?.showPrimaryWindow() }
+        }
         NSApp.setActivationPolicy(.regular)
         requestInitialWindowIfNeeded()
     }

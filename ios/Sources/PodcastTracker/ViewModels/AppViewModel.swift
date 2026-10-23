@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 import WidgetKit
+import UIKit
 
 enum AppSection: String, CaseIterable, Identifiable {
     case today = "Today"
@@ -38,6 +39,10 @@ final class AppViewModel: ObservableObject {
     @Published var activities: [DailyLearningActivity] = []
     @Published var summaries: [PodcastSummary] = []
     @Published private(set) var quirkyConversations: [UUID: [QuirkyChatMessage]] = [:]
+    @Published var habitLoop = HabitLoop()
+    @Published var habitMessage: String?
+    @Published var showDailyCelebration = false
+    @Published var recallBusy = false
     @Published var habitSettings = HabitSettings()
     @Published var notificationPreferences = NotificationPreferences()
     @Published var focusCommitments: [FocusCommitment] = []
@@ -53,6 +58,7 @@ final class AppViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var showAddPodcast = false
     @Published var showSettings = false
+    @Published var showFocusGate = false
     @Published var showRescueSheet = false
     @Published var isTracking = false
     @Published var currentSessionSeconds: Double = 0
@@ -65,7 +71,8 @@ final class AppViewModel: ObservableObject {
     @Published var transcriptImportPresented = false
 
     private let dataManager = DataManager.shared
-    private var trackingTimer: Timer?
+    private var playbackCredit = PlaybackCreditTracker()
+    private var checkpointSeconds: Double = 0
     private var saveTimer: Timer?
     private var downloadCleanupTimer: Timer?
     private var progressSyncTasks: [UUID: Task<Void, Never>] = [:]
@@ -85,9 +92,10 @@ final class AppViewModel: ObservableObject {
     var recentlyAdded: [Podcast] { Array(podcasts.sorted { $0.dateAdded > $1.dateAdded }.prefix(6)) }
     var completedPodcasts: [Podcast] { podcasts.filter(\.isCompleted) }
     var todayActivity: DailyLearningActivity? { activity(for: Date()) }
-    var todayWatchedMinutes: Int { Int((todayActivity?.watchedSeconds ?? stats.dailySecondsWatched) / 60) }
+    var todayWatchedMinutes: Int { Int(habitLoop.learnedSeconds(on: LearningCalendar.dateKey(for: Date())) / 60) }
     var todayRemainingMinutes: Int {
-        max(0, Int(ceil(habitSettings.currentDailyGoalMinutes - Double(todayWatchedMinutes))))
+        let day = LearningCalendar.dateKey(for: Date())
+        return max(0, Int(ceil((habitLoop.goalSeconds(on: day, fallback: habitSettings.currentDailyGoalMinutes * 60) - habitLoop.learnedSeconds(on: day)) / 60)))
     }
 
     var activeCommitment: FocusCommitment? {
@@ -149,6 +157,107 @@ final class AppViewModel: ObservableObject {
         Set(podcasts.filter { $0.totalWatchedSeconds > 0 }.map(\.categoryID))
     }
 
+    var streakProtectedToday: Bool { habitLoop.completedGoal(on: LearningCalendar.dateKey(for: Date())) }
+    var habitStreakStatus: (count: Int, freezes: Int, frozenDays: Set<String>) { habitLoop.streak(activities: activities) }
+    var habitLeague: HabitLeague { habitLoop.league(activities: activities) }
+
+    func reconcileHabitLoop(celebrate: Bool = true) {
+        prepareDailyLearningGoal()
+        let wins = habitLoop.reconcile(activities: activities, goalMinutes: habitSettings.currentDailyGoalMinutes)
+        stats.totalXP = habitLoop.legacyXP + habitLoop.rewardXP
+        recomputeStreak()
+        presentLevelToastIfNeeded()
+        if celebrate, let last = wins.last { habitMessage = last }
+        if celebrate { PlayMoments.shared.noteWins(wins) }
+        if celebrate, streakProtectedToday,
+           habitLoop.insert(.init(id: "celebrated/\(habitLoop.deviceID)/\(LearningCalendar.dateKey(for: Date()))", day: LearningCalendar.dateKey(for: Date()), kind: "baseline")) {
+            showDailyCelebration = true
+        }
+        let today = LearningCalendar.dateKey(for: Date())
+        if streakProtectedToday {
+            for index in habitLoop.reminderHistory.indices where habitLoop.reminderHistory[index].day == today
+                && habitLoop.reminderHistory[index].fireTime <= Date()
+                && Date().timeIntervalSince(habitLoop.reminderHistory[index].fireTime) <= 3600
+                && habitLoop.learnedSeconds(on: today) >= habitLoop.reminderHistory[index].baselineSeconds + 300 {
+                habitLoop.reminderHistory[index].completed = true
+            }
+        }
+    }
+
+    private func prepareDailyLearningGoal() {
+        let day = LearningCalendar.dateKey(for: Date())
+        habitSettings.currentDailyGoalMinutes = habitLoop.prepareDailyGoal(day: day)
+        stats.dailyGoalMinutes = habitSettings.currentDailyGoalMinutes
+        FocusModeController.shared.updateGoal(target: habitSettings.currentDailyGoalMinutes * 60,
+            localSeconds: habitLoop.localSeconds(on: day), owner: habitLoop.ownerID)
+    }
+
+    private func acceptForegroundFocusSync() {
+        #if os(iOS)
+        guard UIApplication.shared.applicationState == .active else { return }
+        #endif
+        let day = LearningCalendar.dateKey(for: Date())
+        prepareDailyLearningGoal()
+        FocusModeController.shared.updateGoal(target: habitSettings.currentDailyGoalMinutes * 60,
+            localSeconds: habitLoop.localSeconds(on: day), sharedSeconds: habitLoop.learnedSeconds(on: day), owner: habitLoop.ownerID)
+        FocusModeController.shared.checkpoint()
+    }
+
+    func purchaseHabitItem(_ item: String) {
+        guard AuthManager.shared.isAuthenticated else { habitMessage = "Sign in and sync to spend shared gems. Learning and earning work offline."; return }
+        let purchaseOwner = AuthManager.shared.userId
+        Task {
+            do {
+                let result = try await SupabaseClient.shared.syncHabitLoop(habitLoop, purchase: item, purchaseID: UUID().uuidString)
+                guard AuthManager.shared.userId == purchaseOwner else { return }
+                habitLoop.legacyXP = result.legacyXP
+                habitLoop.startedDay = result.startedDay
+                habitLoop.merge(result.events)
+                reconcileHabitLoop(celebrate: false)
+                saveLocalData()
+                habitMessage = item == "freeze" ? "Freeze refilled. This does not unlock apps." : "Seven-day promise started · 20 gems staked · 40 back for seven learning days."
+            } catch { habitMessage = "Purchase unavailable: \(error.localizedDescription)" }
+        }
+    }
+
+    func generateRecall(for podcast: Podcast) {
+        guard !recallBusy else { return }
+        guard let transcript = dataManager.loadTranscript(for: podcast.id), !transcript.text.isEmpty else {
+            habitMessage = "Generate a summary or import a transcript first. A takeaway note also completes your reflection quest."; return
+        }
+        guard let key = KeychainStore.groqAPIKey() else { habitMessage = "Add your Groq key in Settings. Existing reviews remain available offline."; return }
+        let reviewOwner = habitLoop.ownerID
+        recallBusy = true
+        Task {
+            defer { recallBusy = false }
+            do {
+                let questions = try await GroqClient.shared.recallQuestions(transcript: transcript.text, apiKey: key)
+                guard habitLoop.ownerID == reviewOwner else { return }
+                guard questions.count >= 2, questions.allSatisfy({ $0.isValid(in: transcript.text) }) else { throw GroqError.malformedResponse }
+                let review = RecallReview(id: UUID().uuidString, podcastID: podcast.id,
+                    transcriptDigest: RecallEvidence.digest(transcript.text), questions: questions,
+                    createdDay: LearningCalendar.dateKey(for: Date()))
+                habitLoop.reviews.removeAll { $0.podcastID == podcast.id }
+                habitLoop.reviews.append(review)
+                saveLocalData()
+                habitMessage = "Three source-backed questions are ready. Listening alone still unlocks apps."
+            } catch { habitMessage = "Review unavailable: \(error.localizedDescription) A takeaway note also counts." }
+        }
+    }
+
+    func finishRecall(reviewID: String, stage: Int, correct: Int) {
+        guard let index = habitLoop.reviews.firstIndex(where: { $0.id == reviewID }),
+              (0...3).contains(correct),
+              habitLoop.reviews[index].dueStage(on: LearningCalendar.dateKey(for: Date())) == stage else { return }
+        let review = habitLoop.reviews[index]
+        habitLoop.reviews[index].completedStages.insert(stage)
+        let day = LearningCalendar.dateKey(for: Date())
+        habitLoop.reflect(on: day)
+        habitLoop.insert(.init(id: "recall/\(review.podcastID.uuidString)/\(review.createdDay)/\(stage)", day: day, kind: "xp", value: 10))
+        saveData()
+        habitMessage = "Review complete · \(correct)/3 correct · +10 XP. Next reviews: days 1, 3 and 7."
+    }
+
     init() {
         loadData()
         startAutoSave()
@@ -166,6 +275,15 @@ final class AppViewModel: ObservableObject {
         summaries = dataManager.loadSummaries()
         quirkyConversations = dataManager.loadQuirkyConversations()
         habitSettings = dataManager.loadHabitSettings()
+        habitLoop = dataManager.loadHabitLoop(ownerID: AuthManager.shared.userId?.uuidString) ?? {
+            var value = HabitLoop(); value.ownerID = AuthManager.shared.userId?.uuidString; value.legacyXP = stats.totalXP
+            for milestone in [3, 7, 14, 30, 50, 100, 365] where stats.longestStreak >= milestone {
+                value.insert(.init(id: "milestone/\(milestone)", day: value.startedDay, kind: "baseline", value: Double(milestone)))
+            }
+            return value
+        }()
+        habitMessage = dataManager.habitPersistenceError
+        habitLoop.lastOpenedAt = Date()
         notificationPreferences = dataManager.loadNotificationPreferences()
         focusCommitments = dataManager.loadFocusCommitments()
         collections = dataManager.loadCollections()
@@ -177,10 +295,12 @@ final class AppViewModel: ObservableObject {
         LocalMediaStore.shared.reconcile(with: podcasts, migrationDate: migrationDate)
 
         seedMissingCategoriesAndRepairReferences()
-        LearningCalendar.evaluateBuildUp(settings: &habitSettings, activities: activities, now: Date())
+        prepareDailyLearningGoal()
         stats.dailyGoalMinutes = habitSettings.currentDailyGoalMinutes
         stats.resetDailyIfNeeded()
         stats.resetWeeklyIfNeeded()
+        reconcileHabitLoop(celebrate: false)
+        FocusModeController.shared.refresh()
         previousLevel = stats.currentLevel.number
         saveLocalData()
         rescheduleNotifications()
@@ -189,8 +309,10 @@ final class AppViewModel: ObservableObject {
     }
 
     func saveData() {
+        reconcileHabitLoop()
         saveLocalData()
-        guard AuthManager.shared.isAuthenticated else { return }
+        guard AuthManager.shared.isAuthenticated, !Self.demoMode else { return }
+        let syncOwner = AuthManager.shared.userId
         let currentStats = stats
         let currentPodcasts = podcasts
         let currentCategories = categories
@@ -199,6 +321,15 @@ final class AppViewModel: ObservableObject {
         let currentCollections = collections
         Task {
             do {
+                if let result = try? await SupabaseClient.shared.syncHabitLoop(habitLoop) {
+                    guard AuthManager.shared.userId == syncOwner else { return }
+                    habitLoop.legacyXP = result.legacyXP
+                    habitLoop.startedDay = result.startedDay
+                    habitLoop.merge(result.events)
+                    reconcileHabitLoop(celebrate: false)
+                    saveLocalData()
+                }
+                guard AuthManager.shared.userId == syncOwner else { return }
                 try await SupabaseClient.shared.upsertStats(currentStats)
                 try await SupabaseClient.shared.upsertPodcasts(currentPodcasts, categories: currentCategories)
                 try await SupabaseClient.shared.upsertCategories(currentCategories)
@@ -212,6 +343,7 @@ final class AppViewModel: ObservableObject {
     }
 
     private func saveLocalData() {
+        FocusModeController.shared.checkpoint()
         dataManager.savePodcasts(podcasts)
         dataManager.saveStats(stats)
         dataManager.saveAchievements(achievements)
@@ -219,6 +351,7 @@ final class AppViewModel: ObservableObject {
         dataManager.saveActivities(activities)
         dataManager.saveSummaries(summaries)
         dataManager.saveQuirkyConversations(quirkyConversations)
+        dataManager.saveHabitLoop(habitLoop)
         dataManager.saveHabitSettings(habitSettings)
         dataManager.saveNotificationPreferences(notificationPreferences)
         dataManager.saveFocusCommitments(focusCommitments)
@@ -238,7 +371,12 @@ final class AppViewModel: ObservableObject {
             completedCount: completedPodcasts.count,
             nextEpisodeID: next?.id,
             nextEpisodeTitle: next?.title,
-            nextEpisodeProgress: next?.progressPercentage ?? 0
+            nextEpisodeProgress: next?.progressPercentage ?? 0,
+            snapshotDay: LearningCalendar.dateKey(for: Date()),
+            streakProtected: streakProtectedToday,
+            focusMinutesRemaining: FocusModeController.shared.state.enabled ? FocusModeController.shared.state.remainingMinutes : nil,
+            focusTargetMinutes: FocusModeController.shared.state.enabled ? Int(FocusModeController.shared.state.dailyTargetSeconds / 60) : nil,
+            gems: habitLoop.gems
         )
         if PodTrackioWidgetSnapshotStore.save(snapshot) {
             WidgetCenter.shared.reloadAllTimelines()
@@ -283,15 +421,32 @@ final class AppViewModel: ObservableObject {
     /// Local playback is merged by edit time before any upload, so a slow
     /// response cannot erase the position the person just reached.
     func refreshCloudData() {
-        guard AuthManager.shared.isAuthenticated, !syncInFlight else { return }
+        prepareDailyLearningGoal()
+        FocusModeController.shared.refresh()
+        guard AuthManager.shared.isAuthenticated, !syncInFlight, !Self.demoMode else { return }
         Task { await syncWithSupabase() }
     }
 
     private func syncWithSupabase() async {
         guard !syncInFlight else { return }
+        let syncOwner = AuthManager.shared.userId
         syncInFlight = true
         defer { syncInFlight = false }
         do {
+            let wasComplete = streakProtectedToday
+            do {
+                let value = try await SupabaseClient.shared.syncHabitLoop(habitLoop)
+                guard AuthManager.shared.userId == syncOwner else { return }
+                habitLoop.legacyXP = value.legacyXP
+                habitLoop.startedDay = value.startedDay
+                habitLoop.merge(value.events)
+                acceptForegroundFocusSync()
+                FocusModeController.shared.message = nil
+                reconcileHabitLoop(celebrate: !wasComplete && streakProtectedToday)
+                saveLocalData()
+            } catch {
+                FocusModeController.shared.message = "Learning sync is unavailable. Your local progress is safe. Reopen PodTrackio online to unlock with another device’s learning."
+            }
             async let remotePodcasts = SupabaseClient.shared.fetchPodcasts()
             async let remoteStats = SupabaseClient.shared.fetchStats()
             async let remoteCategories = SupabaseClient.shared.fetchCategories()
@@ -300,12 +455,19 @@ final class AppViewModel: ObservableObject {
             async let remoteCollections = SupabaseClient.shared.fetchCollections()
             let result = try await (remotePodcasts, remoteStats, remoteCategories, remoteActivities, remoteSummaries, remoteCollections)
 
+            guard AuthManager.shared.userId == syncOwner else { return }
             podcasts = mergePodcasts(local: podcasts, remote: result.0)
-            if let value = result.1 { stats = value }
+            if let value = result.1 {
+                let local = stats
+                stats = value
+                stats.totalXP = max(local.totalXP, value.totalXP)
+                stats.longestStreak = max(local.longestStreak, value.longestStreak)
+            }
             if !result.2.isEmpty { categories = mergeByUpdatedAt(local: categories, remote: result.2) }
             if !result.3.isEmpty { activities = mergeByID(local: activities, remote: result.3) }
             if !result.4.isEmpty { summaries = mergeSummaries(local: summaries, remote: result.4) }
             if !result.5.isEmpty { collections = mergeCollections(local: collections, remote: result.5) }
+            reconcileHabitLoop(celebrate: false)
             seedMissingCategoriesAndRepairReferences()
             restoreAchievementUnlocks()
             saveLocalData()
@@ -426,6 +588,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func updateNotes(for podcastID: UUID, notes: String) {
+        if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { habitLoop.reflect(on: LearningCalendar.dateKey(for: Date())) }
         guard let index = podcasts.firstIndex(where: { $0.id == podcastID }) else { return }
         let clean = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstNote = podcasts[index].notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !clean.isEmpty
@@ -553,76 +716,90 @@ final class AppViewModel: ObservableObject {
     private func startTracking(podcast: Podcast) {
         guard !isTracking else { return }
         selectedPodcast = podcasts.first(where: { $0.id == podcast.id }) ?? podcast
+        PlayMoments.shared.trackingStarted(xp: stats.totalXP)
         isTracking = true
         currentSessionSeconds = 0
         stats.sessionsCount += 1
         stats.resetDailyIfNeeded()
         stats.resetWeeklyIfNeeded()
         mutateTodayActivity { $0.sessions += 1 }
-        Task { await NotificationManager.shared.cancelToday() }
-        trackingTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tickTracking() }
-        }
+        playbackCredit.begin(position: podcast.lastPlaybackPosition)
     }
 
     func stopTracking() {
         guard isTracking else { return }
         isTracking = false
-        trackingTimer?.invalidate()
-        trackingTimer = nil
+        playbackCredit.reset()
+        reconcileHabitLoop()
+        PlayMoments.shared.trackingStopped(seconds: currentSessionSeconds)
         stats.longestSessionSeconds = max(stats.longestSessionSeconds, currentSessionSeconds)
         currentSessionSeconds = 0
+        FocusModeController.shared.checkpoint()
         recomputeStreak()
         checkAchievements()
         saveData()
         rescheduleNotifications()
     }
 
-    private func tickTracking() {
-        currentSessionSeconds += 1
-        stats.totalSecondsWatched += 1
-        stats.dailySecondsWatched += 1
-        stats.weeklySecondsWatched += 1
-
+    private func tickTracking(seconds: Double) {
+        stats.resetDailyIfNeeded()
+        stats.resetWeeklyIfNeeded()
+        currentSessionSeconds += seconds
+        stats.totalSecondsWatched += seconds
+        stats.dailySecondsWatched += seconds
+        stats.weeklySecondsWatched += seconds
+        let now = Date()
+        let key = LearningCalendar.dateKey(for: now)
+        prepareDailyLearningGoal()
+        let wasProtected = streakProtectedToday
+        let blocksBefore = Int(habitLoop.localSeconds(on: key) / 300)
+        habitLoop.record(seconds: seconds, day: key, goalMinutes: habitSettings.currentDailyGoalMinutes)
+        FocusModeController.shared.updateGoal(target: habitSettings.currentDailyGoalMinutes * 60,
+            localSeconds: habitLoop.localSeconds(on: key), owner: habitLoop.ownerID)
         if let index = podcasts.firstIndex(where: { $0.id == selectedPodcast?.id }) {
-            podcasts[index].totalWatchedSeconds += 1
-            podcasts[index].lastWatchedDate = Date()
+            podcasts[index].totalWatchedSeconds += seconds
+            podcasts[index].lastWatchedDate = now
             selectedPodcast = podcasts[index]
         }
-
         if let podcastID = selectedPodcast?.id,
-           let commitmentIndex = focusCommitments.lastIndex(where: { $0.podcastID == podcastID && $0.isActive }),
-           focusCommitments[commitmentIndex].recordWatchedSecond() {
-            completedCommitment = focusCommitments[commitmentIndex]
-            saveLocalData()
+           let index = focusCommitments.lastIndex(where: { $0.podcastID == podcastID && $0.isActive }),
+           focusCommitments[index].recordWatched(seconds: seconds, now: now) {
+            completedCommitment = focusCommitments[index]
         }
-
         mutateTodayActivity { activity in
-            activity.watchedSeconds += 1
-            let newlyEarnedXP = ProgressionEngine.awardNewTrackedMinutes(activity: &activity)
-            if newlyEarnedXP > 0 {
-                stats.totalXP += newlyEarnedXP
-                presentLevelToastIfNeeded()
-            }
+            activity.watchedSeconds += seconds
+            activity.goalMinutes = habitSettings.currentDailyGoalMinutes
+            _ = ProgressionEngine.awardNewTrackedMinutes(activity: &activity)
             if !activity.goalCompleted && activity.watchedSeconds >= activity.goalMinutes * 60 {
                 activity.goalCompleted = true
                 if !activity.dailyGoalXPAwarded {
                     activity.dailyGoalXPAwarded = true
-                    activity.xpEarned += 25
-                    stats.totalXP += 25
-                    presentLevelToastIfNeeded()
-                    Task { await NotificationManager.shared.cancelToday() }
+                    habitLoop.insert(.init(id: "daily-goal/\(key)", day: key, kind: "xp", value: 25))
                 }
             }
+        }
+        checkpointSeconds += seconds
+        if checkpointSeconds >= 15 || (!wasProtected && streakProtectedToday)
+            || FocusModeController.shared.justUnlocked || Int(habitLoop.localSeconds(on: key) / 300) > blocksBefore {
+            checkpointSeconds = 0
+            reconcileHabitLoop()
+            saveLocalData()
+            rescheduleNotifications()
+            if !wasProtected && streakProtectedToday { saveData() }
         }
         awardWeeklyGoalIfNeeded()
     }
 
+    func resetPlaybackCredit() { playbackCredit.reset() }
+
     func updatePlaybackPosition(for podcastID: UUID, position: Double) {
-        guard let index = podcasts.firstIndex(where: { $0.id == podcastID }) else { return }
+        guard position.isFinite, position >= 0,
+              let index = podcasts.firstIndex(where: { $0.id == podcastID }) else { return }
+        let seconds = playbackCredit.sample(position: position, playing: isTracking && selectedPodcast?.id == podcastID)
+        if seconds > 0 { tickTracking(seconds: seconds) }
         podcasts[index].lastPlaybackPosition = position
         let now = Date()
-        podcasts[index].lastWatchedDate = now
+        if seconds > 0 { podcasts[index].lastWatchedDate = now }
         dataManager.savePodcasts(podcasts)
         scheduleProgressSync(for: podcasts[index])
         refreshSelectedPodcast()
@@ -635,10 +812,9 @@ final class AppViewModel: ObservableObject {
     }
 
     func setDailyGoal(_ minutes: Double) {
-        habitSettings.currentDailyGoalMinutes = minutes
-        habitSettings.startingDailyGoalMinutes = min(habitSettings.startingDailyGoalMinutes, minutes)
-        stats.dailyGoalMinutes = minutes
-        mutateTodayActivity { $0.goalMinutes = minutes }
+        guard minutes.isFinite, (5...240).contains(minutes) else { return }
+        // Today's dated target stays fixed; preference edits apply on the next learning day.
+        prepareDailyLearningGoal()
         saveData()
         rescheduleNotifications()
     }
@@ -681,6 +857,7 @@ final class AppViewModel: ObservableObject {
     }
 
     func toggleAction(podcastID: UUID, actionID: UUID) {
+        habitLoop.reflect(on: LearningCalendar.dateKey(for: Date()))
         guard let summaryIndex = summaries.firstIndex(where: { $0.podcastID == podcastID }),
               let actionIndex = summaries[summaryIndex].actionPlan.firstIndex(where: { $0.id == actionID }) else { return }
         summaries[summaryIndex].actionPlan[actionIndex].isCompleted.toggle()
@@ -747,8 +924,20 @@ final class AppViewModel: ObservableObject {
             currentGoalMinutes: habitSettings.currentDailyGoalMinutes,
             nextPodcast: nextPodcast, isPlaying: isTracking,
             distractionCue: preferredDistractionCue,
-            distractionPattern: learnedDistractionPattern
+            distractionPattern: learnedDistractionPattern,
+            habitLoop: habitLoop, focus: FocusModeController.shared.state,
+            lastSession: podcasts.compactMap(\.lastWatchedDate).max()
         )
+        for item in plan {
+            if let index = habitLoop.reminderHistory.firstIndex(where: { $0.id == item.id }) {
+                if habitLoop.reminderHistory[index].fireTime > Date() { habitLoop.reminderHistory[index].fireTime = item.fireDate; habitLoop.reminderHistory[index].baselineSeconds = habitLoop.learnedSeconds(on: item.id.components(separatedBy: ".")[1]) }
+            } else {
+                habitLoop.reminderHistory.append(.init(id: item.id, day: LearningCalendar.dateKey(for: item.fireDate), template: item.template,
+                    fireTime: item.fireDate, baselineSeconds: habitLoop.learnedSeconds(on: LearningCalendar.dateKey(for: item.fireDate))))
+            }
+        }
+        habitLoop.reminderHistory = Array(habitLoop.reminderHistory.sorted { $0.fireTime > $1.fireTime }.prefix(180))
+        dataManager.saveHabitLoop(habitLoop)
         let scheduled = podcasts.compactMap { podcast -> ScheduledPodcastNotification? in
             guard let date = podcast.scheduledAt, date > Date(), !podcast.isCompleted else { return nil }
             return .init(podcastID: podcast.id, title: podcast.title, fireDate: date)
@@ -771,8 +960,10 @@ final class AppViewModel: ObservableObject {
     }
 
     private func awardXP(_ amount: Int, activityDate: Date) {
-        stats.totalXP += amount
         let key = LearningCalendar.dateKey(for: activityDate)
+        let id = amount == 100 ? "weekly-goal/\(LearningCalendar.weekKey(for: activityDate))" : "activity/\(UUID().uuidString)"
+        habitLoop.insert(.init(id: id, day: key, kind: "xp", value: Double(amount)))
+        stats.totalXP = habitLoop.legacyXP + habitLoop.rewardXP
         if let index = activities.firstIndex(where: { $0.dateKey == key }) { activities[index].xpEarned += amount }
         else { activities.append(.init(dateKey: key, goalMinutes: habitSettings.currentDailyGoalMinutes, xpEarned: amount)) }
         presentLevelToastIfNeeded()
@@ -793,20 +984,10 @@ final class AppViewModel: ObservableObject {
     }
 
     private func recomputeStreak() {
-        let calendar = Calendar.current
-        let qualifying = Set(activities.filter(\.qualifiesForStreak).map(\.dateKey))
-        var count = 0
-        var cursor = Date()
-        if !qualifying.contains(LearningCalendar.dateKey(for: cursor, calendar: calendar)) {
-            cursor = calendar.date(byAdding: .day, value: -1, to: cursor) ?? cursor
-        }
-        while qualifying.contains(LearningCalendar.dateKey(for: cursor, calendar: calendar)) {
-            count += 1
-            cursor = calendar.date(byAdding: .day, value: -1, to: cursor) ?? cursor
-        }
-        stats.currentStreak = count
-        stats.longestStreak = max(stats.longestStreak, count)
-        if count > 0 { stats.lastActiveDate = Date() }
+        let status = habitLoop.streak(activities: activities)
+        stats.currentStreak = status.count
+        stats.longestStreak = max(stats.longestStreak, status.count)
+        if streakProtectedToday { stats.lastActiveDate = Date() }
     }
 
     func checkAchievements() {
@@ -864,7 +1045,18 @@ final class AppViewModel: ObservableObject {
 
     private func mergeByID(local: [DailyLearningActivity], remote: [DailyLearningActivity]) -> [DailyLearningActivity] {
         var values = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
-        for item in remote { values[item.id] = item }
+        for item in remote {
+            guard var local = values[item.id] else { values[item.id] = item; continue }
+            local.watchedSeconds = max(local.watchedSeconds, item.watchedSeconds)
+            local.sessions = max(local.sessions, item.sessions)
+            local.goalCompleted = local.goalCompleted || item.goalCompleted
+            local.xpEarned = max(local.xpEarned, item.xpEarned)
+            local.xpAwardedMinutes = max(local.xpAwardedMinutes, item.xpAwardedMinutes)
+            local.completedPodcastIDs.formUnion(item.completedPodcastIDs)
+            local.dailyGoalXPAwarded = local.dailyGoalXPAwarded || item.dailyGoalXPAwarded
+            local.weeklyGoalXPAwarded = local.weeklyGoalXPAwarded || item.weeklyGoalXPAwarded
+            values[item.id] = local
+        }
         return values.values.sorted { $0.dateKey < $1.dateKey }
     }
 
@@ -925,7 +1117,12 @@ final class AppViewModel: ObservableObject {
         AuthManager.shared.$isAuthenticated.dropFirst().receive(on: RunLoop.main).sink { [weak self] authenticated in
             guard let self else { return }
             if authenticated { self.loadData() }
-            else { self.stopTracking(); self.selectedPodcast = nil; self.selectedSection = .today }
+            else {
+                self.stopTracking()
+                self.habitLoop = self.dataManager.loadHabitLoop() ?? HabitLoop()
+                self.stats.totalXP = self.habitLoop.legacyXP + self.habitLoop.rewardXP
+                self.selectedPodcast = nil; self.selectedSection = .today
+            }
         }.store(in: &cancellables)
     }
 
@@ -950,7 +1147,6 @@ final class AppViewModel: ObservableObject {
     }
 
     isolated deinit {
-        trackingTimer?.invalidate()
         saveTimer?.invalidate()
         downloadCleanupTimer?.invalidate()
         progressSyncTasks.values.forEach { $0.cancel() }

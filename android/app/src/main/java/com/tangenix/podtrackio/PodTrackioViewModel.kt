@@ -7,6 +7,10 @@ import androidx.lifecycle.viewModelScope
 import com.tangenix.podtrackio.data.AuthRepository
 import com.tangenix.podtrackio.data.AuthState
 import com.tangenix.podtrackio.domain.AnswerStyle
+import com.tangenix.podtrackio.domain.HabitLoop
+import com.tangenix.podtrackio.domain.HabitEvent
+import com.tangenix.podtrackio.domain.PlaybackCreditTracker
+import com.tangenix.podtrackio.domain.RecallReview
 import com.tangenix.podtrackio.domain.AppSnapshot
 import com.tangenix.podtrackio.domain.DailyLearningActivity
 import com.tangenix.podtrackio.domain.DistractionCue
@@ -14,7 +18,6 @@ import com.tangenix.podtrackio.domain.DownloadQuality
 import com.tangenix.podtrackio.domain.FocusCommitment
 import com.tangenix.podtrackio.domain.HabitSettings
 import com.tangenix.podtrackio.domain.LearningCategory
-import com.tangenix.podtrackio.domain.LearningCalendar
 import com.tangenix.podtrackio.domain.NotificationPreferences
 import com.tangenix.podtrackio.domain.PlaylistPreview
 import com.tangenix.podtrackio.domain.Podcast
@@ -32,6 +35,7 @@ import com.tangenix.podtrackio.domain.todayKey
 import com.tangenix.podtrackio.domain.weekKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +53,15 @@ import kotlin.math.max
 enum class AppSection(val title: String) { TODAY("Today"), LIBRARY("Library"), PROGRESS("Progress"), BRAIN("Brain") }
 enum class InspectorMode(val title: String) { SUMMARY("Summary"), NOTES("Notes"), QUIRKY("Quirky") }
 
+/** Full-screen reward moments, queued so they play one at a time. */
+sealed class Moment {
+    data object StreakExtended : Moment()
+    data class Chest(val gems: Int) : Moment()
+    data object LevelUp : Moment()
+    data class Session(val seconds: Double, val xp: Int, val quests: Int, val goalProgress: Float) : Moment()
+    data class FreezeSaved(val streak: Int) : Moment()
+}
+
 data class PodTrackioUiState(
     val loaded: Boolean = false,
     val snapshot: AppSnapshot = AppSnapshot(),
@@ -64,9 +77,17 @@ data class PodTrackioUiState(
     val summaryStatus: String? = null,
     val chatBusy: Boolean = false,
     val brainBusy: Boolean = false,
+    val recallBusy: Boolean = false,
+    val habitMessage: String? = null,
     val downloadProgress: Map<String, Float> = emptyMap(),
     val playingPodcastId: String? = null,
+    val playbackStartRequest: String? = null,
     val demoMode: Boolean = false,
+    val moments: List<Moment> = emptyList(),
+    val brainStreamingId: String? = null,
+    val brainNeedsKey: Boolean = false,
+    val brainError: String? = null,
+    val brainQuiz: Pair<String, List<com.tangenix.podtrackio.domain.RecallQuestion>>? = null,
 ) {
     val selectedPodcast get() = snapshot.podcasts.firstOrNull { it.id == selectedPodcastId }
     val filteredPodcasts get() = snapshot.podcasts.filter { podcast ->
@@ -83,22 +104,37 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
     val ui: StateFlow<PodTrackioUiState> = _ui.asStateFlow()
     val auth: StateFlow<AuthState> = container.auth.state
 
+    private var pendingHabitWin: String? = null
     private var persistJob: Job? = null
     private var syncJob: Job? = null
     private val progressSyncJobs = mutableMapOf<String, Job>()
-    private val lastProgress = mutableMapOf<String, Double>()
+    private val playbackCredit = PlaybackCreditTracker()
+    private var creditPodcastId: String? = null
+    private var checkpointSeconds = 0.0
     private var lastSyncedUser: String? = null
+    private var sessionStartXp: Int? = null
+    private var sessionSeconds = 0.0
 
     val externalMediaToolsAvailable get() = container.mediaTools.supportsExternalMediaTools
 
     init {
         viewModelScope.launch {
             val loaded = container.localStore.load()
-            val habits = LearningCalendar.evaluateBuildUp(loaded.habitSettings, loaded.activities)
+            var habits = loaded.habitSettings
+            val initialLoop = loaded.habitLoop.copy(lastOpenedAt = Instant.now())
+            if (initialLoop.events.isEmpty()) {
+                initialLoop.legacyXP = loaded.stats.totalXp
+                listOf(3, 7, 14, 30, 50, 100, 365).filter { loaded.stats.longestStreak >= it }.forEach {
+                    initialLoop.insert(HabitEvent("milestone/$it", initialLoop.startedDay, "baseline", it.toDouble()))
+                }
+            }
+            habits = habits.copy(currentDailyGoalMinutes = initialLoop.prepareDailyGoal())
+            initialLoop.reconcile(loaded.activities, habits.currentDailyGoalMinutes)
             val reconciled = loaded.copy(
+                habitLoop = initialLoop,
                 downloads = container.downloads.reconcile(loaded.downloads),
                 habitSettings = habits,
-                stats = loaded.stats.copy(dailyGoalMinutes = habits.currentDailyGoalMinutes),
+                stats = loaded.stats.copy(dailyGoalMinutes = habits.currentDailyGoalMinutes, totalXp = initialLoop.legacyXP + initialLoop.rewardXP),
             )
             _ui.update { it.copy(loaded = true, snapshot = reconciled) }
             container.auth.restore()
@@ -107,12 +143,19 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
             container.auth.state.collect { state ->
                 val userId = state.profile?.id
                 if (state.isAuthenticated && userId != null && lastSyncedUser != userId) {
-                    lastSyncedUser = userId
-                    sync()
+                    runCatching { container.localStore.bindHabitOwner(userId, _ui.value.snapshot.habitLoop) }.onSuccess { loop ->
+                        if (auth.value.profile?.id == userId) {
+                            _ui.update { it.copy(snapshot = it.snapshot.copy(habitLoop = loop, stats = it.snapshot.stats.copy(totalXp = loop.legacyXP + loop.rewardXP))) }
+                            lastSyncedUser = userId
+                            sync()
+                        }
+                    }.onFailure { error -> _ui.update { it.copy(habitMessage = "Habit data could not be opened: ${error.message}") } }
                 }
                 if (!state.isAuthenticated && !state.restoring) {
                     lastSyncedUser = null
-                    _ui.update { it.copy(selectedPodcastId = null, playingPodcastId = null, section = AppSection.TODAY) }
+                    val guest = runCatching { container.localStore.bindHabitOwner(null, _ui.value.snapshot.habitLoop) }.getOrElse { HabitLoop() }
+                    _ui.update { it.copy(selectedPodcastId = null, playingPodcastId = null, section = AppSection.TODAY,
+                        snapshot = it.snapshot.copy(habitLoop = guest, stats = it.snapshot.stats.copy(totalXp = guest.legacyXP + guest.rewardXP))) }
                 }
             }
         }
@@ -166,11 +209,56 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
                 unlockedAchievementIds = listOf("first_listen", "one_hour", "streak_3", "first_note", "complete_first"),
             ),
         )
-        _ui.update { it.copy(snapshot = fixture, demoMode = true, section = AppSection.TODAY, selectedPodcastId = null) }
+        // A believable 12-day streak with one frozen day, so the habit loop UI has something to show.
+        val today = LocalDate.now()
+        val loop = HabitLoop(startedDay = today.minusDays(30).toString(), legacyXP = 1180)
+        val events = mutableListOf<HabitEvent>()
+        for (offset in 13 downTo 1) if (offset != 5) {
+            val key = today.minusDays(offset.toLong()).toString()
+            events += HabitEvent("adaptive-goal/$key", key, "goal", 540.0)
+            events += HabitEvent("playback/${loop.deviceID}/$key", key, "playback", 600.0 + offset * 20)
+        }
+        events += HabitEvent("adaptive-goal/$today", today.toString(), "goal", 540.0)
+        events += HabitEvent("playback/${loop.deviceID}/$today", today.toString(), "playback", 372.0)
+        events += HabitEvent("demo/gems", today.minusDays(10).toString(), "gems", 240.0)
+        loop.events = events
+        loop.reconcile(fixture.activities, 9.0)
+        val streak = loop.streak(fixture.activities)
+        val seeded = fixture.copy(habitLoop = loop, habitSettings = fixture.habitSettings.copy(currentDailyGoalMinutes = 9.0),
+            stats = fixture.stats.copy(totalXp = loop.legacyXP + loop.rewardXP, currentStreak = streak.count, longestStreak = 19, dailyGoalMinutes = 9.0))
+        _ui.update { it.copy(snapshot = seeded, demoMode = true, section = AppSection.TODAY, selectedPodcastId = null) }
     }
 
-    fun selectSection(section: AppSection) = _ui.update { it.copy(section = section, selectedPodcastId = null) }
-    fun selectPodcast(id: String?) = _ui.update { it.copy(selectedPodcastId = id) }
+    fun selectSection(section: AppSection) { closeSessionIfNeeded(); _ui.update { it.copy(section = section, selectedPodcastId = null) } }
+    fun selectPodcast(id: String?) { if (id == null) closeSessionIfNeeded(); _ui.update { it.copy(selectedPodcastId = id) } }
+
+    /** A real session (5+ credited minutes) ends with a results screen when the player closes. */
+    private fun closeSessionIfNeeded() {
+        val start = sessionStartXp ?: return
+        val seconds = sessionSeconds
+        sessionStartXp = null; sessionSeconds = 0.0
+        if (seconds < 300) return
+        val snapshot = _ui.value.snapshot
+        val info = snapshot.habitLoop
+        val day = todayKey()
+        val progress = (info.learnedSeconds(day) / info.goalSeconds(day, snapshot.habitSettings.currentDailyGoalMinutes * 60).coerceAtLeast(60.0)).toFloat().coerceIn(0f, 1f)
+        enqueue(Moment.Session(seconds, (snapshot.stats.totalXp - start).coerceAtLeast(0), info.questCount(day), progress))
+    }
+
+    fun enqueue(moment: Moment) = _ui.update { it.copy(moments = it.moments + moment) }
+    fun dismissMoment() = _ui.update { it.copy(moments = it.moments.drop(1)) }
+
+    /** Shown once, the first launch after a freeze covered yesterday. */
+    fun checkFreezeSaved(prefs: android.content.SharedPreferences) {
+        val yesterday = LocalDate.now().minusDays(1).toString()
+        val snapshot = _ui.value.snapshot
+        val streak = snapshot.habitLoop.streak(snapshot.activities)
+        val key = "freezeAck.$yesterday"
+        if (yesterday in streak.frozenDays && !prefs.getBoolean(key, false)) {
+            prefs.edit().putBoolean(key, true).apply()
+            enqueue(Moment.FreezeSaved(streak.count))
+        }
+    }
     fun setInspector(mode: InspectorMode) = _ui.update { it.copy(inspectorMode = mode) }
     suspend fun fetchVideoTitle(videoId: String): String? = container.mediaTools.fetchVideoTitle(videoId)
 
@@ -264,6 +352,7 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun updateNotes(podcastId: String, notes: String) {
+        if (notes.isNotBlank()) reflectToday()
         mutate { snapshot ->
             val before = snapshot.podcasts.firstOrNull { it.id == podcastId }?.notes.orEmpty()
             snapshot.copy(
@@ -357,6 +446,7 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
         val commitment = FocusCommitment(podcastId = podcastId, cue = cue, targetSeconds = minutes * 60.0)
         mutate { it.copy(focusCommitments = it.focusCommitments + commitment) }
         selectPodcast(podcastId)
+        _ui.update { it.copy(playbackStartRequest = podcastId) }
         showMessage("$minutes-minute focus promise started. Only real playback counts.")
         persist()
     }
@@ -384,36 +474,48 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun onPlaybackProgress(podcastId: String, position: Double, duration: Double, playing: Boolean) {
-        val previous = lastProgress[podcastId]
-        lastProgress[podcastId] = position
-        val delta = if (playing && previous != null) (position - previous).takeIf { it in 0.2..2.5 } ?: 0.0 else 0.0
+        if (!position.isFinite() || position < 0) return
+        if (creditPodcastId != podcastId) { playbackCredit.reset(); creditPodcastId = podcastId }
+        val delta = playbackCredit.sample(position, playing)
+        if (delta > 0) {
+            if (sessionStartXp == null) sessionStartXp = _ui.value.snapshot.stats.totalXp
+            sessionSeconds += delta
+        }
         val now = Instant.now()
+        val before = _ui.value.snapshot
+        val wasPlaying = _ui.value.playingPodcastId == podcastId
+        val previousPosition = before.podcasts.firstOrNull { it.id == podcastId }?.lastPlaybackPosition ?: position
+        val blocksBefore = (before.habitLoop.localSeconds(todayKey()) / 300).toInt()
         mutate(immediatePersist = false) { snapshot ->
             var stats = snapshot.stats
             var activities = snapshot.activities
             var commitments = snapshot.focusCommitments
+            val loop = snapshot.habitLoop.copy()
             if (delta > 0) {
-                val oldMinutes = snapshot.activities.firstOrNull { it.dateKey == todayKey() }?.xpAwardedMinutes ?: 0
-                activities = upsertToday(activities, snapshot.habitSettings.currentDailyGoalMinutes) { activity ->
+                val goal = loop.prepareDailyGoal()
+                loop.record(delta, todayKey(), goal)
+                activities = upsertToday(activities, goal) { activity ->
                     val watched = activity.watchedSeconds + delta
                     val completedMinutes = (watched / 60).toInt()
                     val earned = max(0, completedMinutes - activity.xpAwardedMinutes)
-                    val goalReached = watched >= activity.goalMinutes * 60
+                    val goalReached = watched >= goal * 60
                     activity.copy(
-                        watchedSeconds = watched, xpAwardedMinutes = completedMinutes,
+                        watchedSeconds = watched, goalMinutes = goal, xpAwardedMinutes = completedMinutes,
                         xpEarned = activity.xpEarned + earned + if (goalReached && !activity.dailyGoalXpAwarded) 25 else 0,
                         goalCompleted = activity.goalCompleted || goalReached,
                         dailyGoalXpAwarded = activity.dailyGoalXpAwarded || goalReached,
                     )
                 }
                 val today = activities.first { it.dateKey == todayKey() }
-                val xpGain = max(0, today.xpAwardedMinutes - oldMinutes) + if (today.dailyGoalXpAwarded && !(snapshot.activities.firstOrNull { it.dateKey == todayKey() }?.dailyGoalXpAwarded ?: false)) 25 else 0
+                if (today.dailyGoalXpAwarded && !(snapshot.activities.firstOrNull { it.dateKey == todayKey() }?.dailyGoalXpAwarded ?: false)) {
+                    loop.insert(HabitEvent("daily-goal/${todayKey()}", todayKey(), "xp", 25.0))
+                }
                 val streak = updateStreak(stats, today)
                 stats = streak.copy(
                     totalSecondsWatched = streak.totalSecondsWatched + delta,
                     dailySecondsWatched = streak.dailySecondsWatched + delta,
                     weeklySecondsWatched = streak.weeklySecondsWatched + delta,
-                    totalXp = streak.totalXp + xpGain,
+                    totalXp = streak.totalXp,
                 )
                 commitments = commitments.map { item ->
                     if (item.isActive && item.podcastId == podcastId) {
@@ -425,15 +527,21 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
             snapshot.copy(
                 podcasts = snapshot.podcasts.map { item -> if (item.id == podcastId) item.copy(
                     lastPlaybackPosition = position.coerceAtLeast(0.0), duration = duration.takeIf { it > 0 } ?: item.duration,
-                    lastWatchedDate = if (playing) now else item.lastWatchedDate,
+                    lastWatchedDate = if (delta > 0) now else item.lastWatchedDate,
                     totalWatchedSeconds = item.totalWatchedSeconds + delta,
                 ) else item },
-                stats = stats, activities = activities, focusCommitments = commitments,
+                habitLoop = loop, stats = stats, activities = activities, focusCommitments = commitments,
             )
         }
         _ui.update { it.copy(playingPodcastId = podcastId.takeIf { playing }) }
-        persist(delayMs = 1_500)
-        scheduleProgressSync(podcastId)
+        checkpointSeconds += delta
+        val blocksAfter = (_ui.value.snapshot.habitLoop.localSeconds(todayKey()) / 300).toInt()
+        if ((wasPlaying && !playing) || (!playing && kotlin.math.abs(position - previousPosition) > .01)
+            || checkpointSeconds >= 15 || blocksAfter > blocksBefore) {
+            checkpointSeconds = 0.0
+            persist()
+            scheduleProgressSync(podcastId)
+        }
     }
 
     fun setTranscript(podcastId: String, text: String, source: TranscriptSource = TranscriptSource.pasted) {
@@ -494,35 +602,103 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
         mutate { it.copy(brain = transform(it.brain)) }
     }
 
-    fun askBrain(question: String, model: QuirkyModel = QuirkyModel.DEEP, style: AnswerStyle = AnswerStyle.MEDIUM) {
-        if (_ui.value.brainBusy || question.isBlank()) return
-        if (question.length > 2000) return showMessage("Keep your question under 2,000 characters.")
+    /** `retry` resends the last question without adding it again. Answers stream in; Quiz mode builds a source-backed quiz. */
+    fun askBrain(question: String, model: QuirkyModel = QuirkyModel.BALANCED, style: AnswerStyle = AnswerStyle.MEDIUM,
+                 mode: com.tangenix.podtrackio.data.BrainMode = com.tangenix.podtrackio.data.BrainMode.ASK, retry: Boolean = false) {
+        val text = question.trim().ifBlank {
+            when (mode) { com.tangenix.podtrackio.data.BrainMode.RECAP -> "Recap what I learned this week."; com.tangenix.podtrackio.data.BrainMode.CONNECT -> "Connect the big ideas across my episodes."; else -> "" }
+        }
+        if (_ui.value.brainBusy || text.isBlank()) return
+        if (text.length > 2000) return showMessage("Keep your question under 2,000 characters.")
+        if (!hasGroqKey()) { _ui.update { it.copy(brainNeedsKey = true, brainError = null) }; return }
         val snapshot = _ui.value.snapshot
         val prior = snapshot.brain
-        _ui.update { it.copy(brainBusy = true) }
-        updateBrain { it.copy(messages = it.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "user", text = question)) }
+        _ui.update { it.copy(brainBusy = true, brainError = null, brainNeedsKey = false) }
+        if (!retry || prior.messages.lastOrNull()?.role != "user") updateBrain { it.copy(messages = it.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "user", text = text)) }
         viewModelScope.launch {
+            val weekAgo = Instant.now().minusSeconds(7 * 86_400)
+            val query = when (mode) {
+                com.tangenix.podtrackio.data.BrainMode.RECAP -> snapshot.podcasts.filter { (it.lastWatchedDate ?: Instant.EPOCH) > weekAgo }.joinToString(" ") { it.title } + " " + text
+                com.tangenix.podtrackio.data.BrainMode.CONNECT -> if (text.length > 40) text else "everything across my learning $text"
+                else -> text + " " + prior.messages.takeLast(4).filter { it.role == "user" }.joinToString(" ") { it.text }
+            }
+            val sources = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                com.tangenix.podtrackio.domain.BrainIndex.build(snapshot).retrieve(query)
+            }
+            if (mode == com.tangenix.podtrackio.data.BrainMode.QUIZ) {
+                val material = sources.filter { it.kind != "Chat" }
+                if (material.isEmpty()) {
+                    updateBrain { it.copy(messages = it.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "assistant", text = "I couldn't find episode material about that yet. Generate a summary or import a transcript, then ask me to quiz you again.")) }
+                } else runCatching { container.ai.recallQuestions(material.joinToString("\n\n") { it.text }) }
+                    .onSuccess { questions ->
+                        _ui.update { it.copy(brainQuiz = (if (text.length > 40) "Quick quiz" else text) to questions) }
+                        updateBrain { it.copy(messages = it.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "assistant", text = "Your ${questions.size}-question quiz is ready. Every answer is backed by a quote from your episodes.", sources = material)) }
+                    }.onFailure { error -> _ui.update { it.copy(brainError = error.message ?: "Quiz unavailable.") } }
+                _ui.update { it.copy(brainBusy = false) }
+                return@launch
+            }
+            val answer = com.tangenix.podtrackio.domain.BrainMessage(role = "assistant", text = "", sources = sources)
+            updateBrain { it.copy(messages = it.messages + answer) }
+            _ui.update { it.copy(brainStreamingId = answer.id) }
             runCatching {
-                val sources = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                    com.tangenix.podtrackio.domain.BrainIndex.build(snapshot).retrieve(question + " " + prior.messages.takeLast(4).filter { it.role == "user" }.joinToString(" ") { it.text })
+                container.ai.streamBrain(prior, sources, text, model, style, mode) { partial ->
+                    _ui.update { state -> state.copy(snapshot = state.snapshot.copy(brain = state.snapshot.brain.copy(messages = state.snapshot.brain.messages.map { if (it.id == answer.id) it.copy(text = partial) else it }))) }
                 }
-                val reply = container.ai.brainReply(prior, sources, question, model, style)
-                updateBrain { state ->
-                    val additions = if (state.rememberPreferences) reply.memories.take(3).filter {
-                        !it.evidence.isNullOrBlank() && question.contains(it.evidence) && it.evidence.length <= 300 && state.memories.none { m -> m.text.equals(it.evidence, true) }
-                    }.map { com.tangenix.podtrackio.domain.PersonalMemory(text = it.evidence, evidence = it.evidence) } else emptyList()
-                    state.copy(messages = state.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "assistant", text = reply.answer, sources = sources), memories = (state.memories + additions).take(100))
+            }.onSuccess { raw ->
+                val clean = com.tangenix.podtrackio.data.BrainParsing.sanitizeCitations(com.tangenix.podtrackio.data.BrainParsing.answer(raw), sources.size)
+                updateBrain { state -> state.copy(messages = state.messages.map { if (it.id == answer.id) it.copy(text = clean) else it }) }
+                if (prior.rememberPreferences) {
+                    val candidates = container.ai.brainMemories(text)
+                    updateBrain { state ->
+                        val additions = candidates.take(3).filter { it.evidence.isNotBlank() && text.contains(it.evidence) && it.evidence.length <= 300 && state.memories.none { m -> m.text.equals(it.evidence, true) } }
+                            .map { com.tangenix.podtrackio.domain.PersonalMemory(text = it.evidence, evidence = it.evidence) }
+                        state.copy(memories = (state.memories + additions).take(100))
+                    }
                 }
-            }.onFailure { showMessage(it.message ?: "Brain could not answer.") }
-            _ui.update { it.copy(brainBusy = false) }
+            }.onFailure { error ->
+                updateBrain { state -> state.copy(messages = state.messages.filterNot { it.id == answer.id && it.text.isBlank() }) }
+                _ui.update { it.copy(brainError = error.message ?: "Brain could not answer.", brainNeedsKey = error is com.tangenix.podtrackio.data.AIRepository.MissingKey) }
+            }
+            _ui.update { it.copy(brainBusy = false, brainStreamingId = null) }
         }
     }
+
+    fun finishBrainQuiz(correct: Int, total: Int) {
+        _ui.update { it.copy(brainQuiz = null) }
+        updateBrain { it.copy(messages = it.messages + com.tangenix.podtrackio.domain.BrainMessage(role = "assistant",
+            text = "Quiz finished: **$correct/$total** correct. ${if (correct == total) "Flawless recall." else "Ask me about the ones you missed and I'll explain with sources."}")) }
+        reflectToday()
+    }
+
+    fun closeBrainQuiz() = _ui.update { it.copy(brainQuiz = null) }
+    fun dismissBrainKeyCard() = _ui.update { it.copy(brainNeedsKey = false) }
+
+    /** Saves a Brain answer into an episode's notes, which also counts toward the takeaway quest. */
+    fun saveBrainNote(podcastId: String, text: String) {
+        val existing = _ui.value.snapshot.podcasts.firstOrNull { it.id == podcastId }?.notes.orEmpty().trim()
+        updateNotes(podcastId, (if (existing.isEmpty()) "" else "$existing\n\n") + "From Brain · ${LocalDate.now()}\n" + text)
+        reflectToday()
+    }
+
+    /** Opens a cited episode at the passage's transcript timestamp when it has one. */
+    fun openCitation(source: com.tangenix.podtrackio.domain.BrainSource) {
+        val seconds = com.tangenix.podtrackio.data.BrainParsing.timestamp(source.text)
+        if (seconds != null) mutate { snap -> snap.copy(podcasts = snap.podcasts.map { if (it.id == source.podcastId) it.copy(lastPlaybackPosition = seconds) else it }) }
+        selectPodcast(source.podcastId)
+    }
+
+    suspend fun saveAndTestGroq(key: String): Result<Unit> = runCatching {
+        container.ai.groqKey = key
+        com.tangenix.podtrackio.data.GroqCatalog.invalidate()
+        container.ai.testGroq()
+    }.onSuccess { _ui.update { it.copy(brainNeedsKey = false, brainError = null) } }.onFailure { container.ai.groqKey = null }
 
     fun clearQuirky(podcastId: String) {
         mutate { it.copy(quirkyConversations = it.quirkyConversations + (podcastId to emptyList())) }
     }
 
     fun toggleAction(podcastId: String, actionId: String) {
+        reflectToday()
         mutate { snapshot ->
             var grant = false
             val summaries = snapshot.summaries.map { summary ->
@@ -590,6 +766,81 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
     fun hasTranscriptKey() = !container.ai.transcriptApiKey.isNullOrBlank()
     fun testGroq() { viewModelScope.launch { runCatching { container.ai.testGroq() }.onSuccess { showMessage("Connected to Groq.") }.onFailure { showMessage(it.message ?: "Connection failed.") } } }
 
+    fun dismissHabitMessage() { _ui.update { it.copy(habitMessage = null) } }
+    fun setHabitFeedback(sounds: Boolean, haptics: Boolean) {
+        mutate { it.copy(habitLoop = it.habitLoop.copy(soundsEnabled = sounds, hapticsEnabled = haptics)) }
+    }
+    private fun reflectToday() {
+        mutate { snapshot -> val loop = snapshot.habitLoop.copy(); loop.reflect(); snapshot.copy(habitLoop = loop) }
+    }
+    fun openLearningIntent(podcastId: String?, fiveMinutes: Boolean) {
+        viewModelScope.launch {
+            val loaded = ui.first { it.loaded }.snapshot
+            val podcast = loaded.podcasts.firstOrNull { it.id == podcastId }
+                ?: loaded.podcasts.firstOrNull { it.hasProgress } ?: loaded.podcasts.firstOrNull { !it.isCompleted }
+            if (podcast != null) {
+                if (fiveMinutes) startRescue(podcast.id, kotlin.math.ceil((loaded.habitLoop.goalSeconds(todayKey(), loaded.habitSettings.currentDailyGoalMinutes * 60) - loaded.habitLoop.learnedSeconds(todayKey())) / 60).toInt().coerceAtLeast(1), com.tangenix.podtrackio.domain.DistractionCue.NOTIFICATION)
+                else selectPodcast(podcast.id)
+            }
+        }
+    }
+    fun stopEmbeddedPlayback(podcastId: String) {
+        playbackCredit.reset()
+        _ui.update { if (it.playingPodcastId == podcastId) it.copy(playingPodcastId = null) else it }
+        checkpoint()
+        scheduleProgressSync(podcastId)
+    }
+    fun consumePlaybackStart(podcastId: String): Boolean {
+        if (_ui.value.playbackStartRequest != podcastId) return false
+        _ui.update { it.copy(playbackStartRequest = null) }
+        return true
+    }
+    fun beginPlaybackCredit(podcastId: String, position: Double) { creditPodcastId = podcastId; playbackCredit.begin(position) }
+    fun resetPlaybackCredit() { playbackCredit.reset() }
+    fun checkpoint() { persist() }
+    fun purchaseHabitItem(item: String) {
+        if (!auth.value.isAuthenticated) { _ui.update { it.copy(habitMessage = "Sign in and sync to spend gems. Learning and earning work offline.") }; return }
+        val purchaseOwner = auth.value.profile?.id
+        viewModelScope.launch {
+            runCatching { container.supabase.syncHabitLoop(_ui.value.snapshot.habitLoop, item, java.util.UUID.randomUUID().toString()) }
+                .onSuccess { result ->
+                    if (auth.value.profile?.id != purchaseOwner) return@onSuccess
+                    mutate { snapshot -> val loop = snapshot.habitLoop.copy(); loop.legacyXP = result.legacyXP; loop.startedDay = result.startedDay; loop.merge(result.events); snapshot.copy(habitLoop = loop) }
+                    _ui.update { it.copy(habitMessage = if (item == "freeze") "Freeze refilled. It never unlocks apps." else "Seven-day promise started · 20 gems staked · 40 back for seven actual learning days.") }
+                }.onFailure { error -> _ui.update { it.copy(habitMessage = "Purchase unavailable: ${error.message}") } }
+        }
+    }
+    fun generateRecall(podcastId: String) {
+        if (_ui.value.recallBusy) return
+        val transcript = _ui.value.snapshot.transcripts[podcastId]?.text
+        if (transcript.isNullOrBlank()) { _ui.update { it.copy(habitMessage = "Import a transcript or generate a summary first. A takeaway note also counts.") }; return }
+        val reviewOwner = _ui.value.snapshot.habitLoop.ownerID
+        _ui.update { it.copy(recallBusy = true) }
+        viewModelScope.launch {
+            runCatching { container.ai.recallQuestions(transcript) }.onSuccess { questions ->
+                if (_ui.value.snapshot.habitLoop.ownerID != reviewOwner) return@onSuccess
+                val digest = java.security.MessageDigest.getInstance("SHA-256").digest(transcript.toByteArray()).joinToString("") { "%02x".format(it) }
+                val review = RecallReview(podcastID = podcastId, transcriptDigest = digest, questions = questions)
+                mutate { snapshot -> snapshot.copy(habitLoop = snapshot.habitLoop.copy(reviews = snapshot.habitLoop.reviews.filterNot { it.podcastID == podcastId } + review)) }
+                _ui.update { it.copy(habitMessage = "Three source-backed questions are ready. Listening alone still unlocks apps.") }
+            }.onFailure { error -> _ui.update { it.copy(habitMessage = "Review unavailable: ${error.message}. A takeaway note also counts.") } }
+            _ui.update { it.copy(recallBusy = false) }
+        }
+    }
+    fun finishRecall(reviewId: String, stage: Int, correct: Int) {
+        if (correct !in 0..3) return
+        val review = _ui.value.snapshot.habitLoop.reviews.firstOrNull { it.id == reviewId } ?: return
+        if (review.dueStage() != stage) return
+        mutate { snapshot ->
+            val loop = snapshot.habitLoop.copy(reviews = snapshot.habitLoop.reviews.map { if (it.id == reviewId) it.copy(completedStages = it.completedStages + stage) else it })
+            loop.reflect()
+            loop.insert(HabitEvent("recall/${review.podcastID}/${review.createdDay}/$stage", todayKey(), "xp", 10.0))
+            snapshot.copy(habitLoop = loop)
+        }
+        _ui.update { it.copy(habitMessage = "Review complete · $correct/3 correct · +10 XP. Reviews repeat on days 1, 3 and 7.") }
+        scheduleAndSync()
+    }
+
     fun refreshCloud() { if (auth.value.isAuthenticated) sync() }
 
     private fun sync() {
@@ -598,16 +849,34 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
         syncJob = viewModelScope.launch {
             _ui.update { it.copy(syncing = true) }
             runCatching {
-                val local = _ui.value.snapshot
                 val remote = container.supabase.fetchWorkspace(user.id)
+                val uploadedLoop = _ui.value.snapshot.habitLoop.copy()
+                val habitResult = runCatching { container.supabase.syncHabitLoop(uploadedLoop) }.getOrNull()
+                check(auth.value.profile?.id == user.id) { "Account changed during sync" }
+                val local = _ui.value.snapshot
                 val podcasts = mergePodcasts(local.podcasts, remote.podcasts)
                 val categories = mergeCategories(local.categories, remote.categories)
-                val activities = mergeById(local.activities, remote.activities) { it.dateKey }
+                val activities = (local.activities + remote.activities).groupBy { it.dateKey }.values.map { rows ->
+                    rows.reduce { a, b -> a.copy(watchedSeconds = max(a.watchedSeconds, b.watchedSeconds),
+                        sessions = max(a.sessions, b.sessions), goalCompleted = a.goalCompleted || b.goalCompleted,
+                        xpEarned = max(a.xpEarned, b.xpEarned), xpAwardedMinutes = max(a.xpAwardedMinutes, b.xpAwardedMinutes),
+                        completedPodcastIds = a.completedPodcastIds + b.completedPodcastIds,
+                        dailyGoalXpAwarded = a.dailyGoalXpAwarded || b.dailyGoalXpAwarded,
+                        weeklyGoalXpAwarded = a.weeklyGoalXpAwarded || b.weeklyGoalXpAwarded) }
+                }
                 val summaries = mergeSummaries(local.summaries, remote.summaries)
                 val collections = mergeById(local.collections, remote.collections) { it.id }.sortedBy { it.sortOrder }
+                val loop = local.habitLoop.copy()
+                habitResult?.let { loop.legacyXP = it.legacyXP; loop.startedDay = it.startedDay; loop.merge(it.events) }
+                val goal = loop.prepareDailyGoal()
+                loop.reconcile(activities, goal)
+                val streak = loop.streak(activities)
                 val merged = local.copy(
+                    habitLoop = loop, habitSettings = local.habitSettings.copy(currentDailyGoalMinutes = goal),
                     podcasts = podcasts, categories = categories, activities = activities,
-                    summaries = summaries, collections = collections, stats = remote.stats ?: local.stats,
+                    summaries = summaries, collections = collections, stats = (remote.stats ?: local.stats).copy(
+                        dailyGoalMinutes = goal, totalXp = loop.legacyXP + loop.rewardXP, currentStreak = streak.count,
+                        longestStreak = max(local.stats.longestStreak, max(remote.stats?.longestStreak ?: 0, streak.count))),
                 )
                 _ui.update { it.copy(snapshot = merged) }
                 container.localStore.save(merged)
@@ -637,15 +906,55 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun mutate(immediatePersist: Boolean = true, operation: (AppSnapshot) -> AppSnapshot) {
-        _ui.update { state -> state.copy(snapshot = operation(state.snapshot)) }
-        if (immediatePersist) persist()
+        var win: String? = null
+        _ui.update { state ->
+            val before = state.snapshot
+            val proposed = operation(before)
+            val loop = proposed.habitLoop.copy()
+            if (proposed.habitLoop == before.habitLoop && proposed.stats.totalXp > before.stats.totalXp) {
+                loop.insert(HabitEvent("activity/${java.util.UUID.randomUUID()}", todayKey(), "xp", (proposed.stats.totalXp - before.stats.totalXp).toDouble()))
+            }
+            val goal = loop.prepareDailyGoal()
+            val wins = loop.reconcile(proposed.activities, goal)
+            val streak = loop.streak(proposed.activities)
+            win = wins.lastOrNull()
+            val day = todayKey()
+            val newXp = loop.legacyXP + loop.rewardXP
+            val moments = buildList {
+                if (!before.habitLoop.completedGoal(day) && loop.completedGoal(day) &&
+                    loop.insert(HabitEvent("celebrated/${loop.deviceID}/$day", day, "baseline"))) add(Moment.StreakExtended)
+                wins.firstOrNull { it.startsWith("Daily chest") }?.let { chest ->
+                    add(Moment.Chest(Regex("(\\d+) gems").find(chest)?.groupValues?.get(1)?.toIntOrNull() ?: 5))
+                }
+                if (before.stats.totalXp > 0 && com.tangenix.podtrackio.domain.Level.forXp(newXp).number > before.stats.level.number) add(Moment.LevelUp)
+            }
+            state.copy(snapshot = proposed.copy(habitLoop = loop, habitSettings = proposed.habitSettings.copy(currentDailyGoalMinutes = goal), stats = proposed.stats.copy(dailyGoalMinutes = goal, totalXp = newXp,
+                currentStreak = streak.count, longestStreak = max(proposed.stats.longestStreak, streak.count))),
+                habitMessage = state.habitMessage, moments = state.moments + moments)
+        }
+        if (win != null) pendingHabitWin = win
+        if (immediatePersist || win != null) persist()
     }
 
     private fun persist(delayMs: Long = 0) {
+        val current = _ui.value.snapshot
+        val loop = current.habitLoop.copy()
+        val plan = com.tangenix.podtrackio.domain.HabitReminderPlanner.plan(current)
+        loop.reminderHistory = com.tangenix.podtrackio.domain.HabitReminderPlanner.recordExposures(loop, plan)
+        _ui.update { it.copy(snapshot = it.snapshot.copy(habitLoop = loop)) }
         persistJob?.cancel()
         persistJob = viewModelScope.launch {
             if (delayMs > 0) delay(delayMs)
-            container.localStore.save(_ui.value.snapshot)
+            val snapshot = _ui.value.snapshot
+            val win = pendingHabitWin
+            runCatching { container.localStore.save(snapshot); container.reminders.reschedule(snapshot) }
+                .onSuccess {
+                    if (win != null && pendingHabitWin == win && snapshot.habitLoop.ownerID == _ui.value.snapshot.habitLoop.ownerID) {
+                        pendingHabitWin = null
+                        _ui.update { it.copy(habitMessage = win) }
+                    }
+                }
+                .onFailure { error -> _ui.update { it.copy(habitMessage = "Progress could not be saved: ${error.message}") } }
         }
     }
 

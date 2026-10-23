@@ -255,20 +255,20 @@ struct AddPodcastSheet: View {
                 viewModel.addPodcast(title: effectiveTitle, url: url, categoryID: categoryID)
                 dismiss()
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
             .disabled(!canSaveEpisode)
             .animation(.spring(response: 0.2, dampingFraction: 0.9), value: canSaveEpisode)
         } else if importResult != nil {
-            Button("Done") { dismiss() }.buttonStyle(.glassProminent)
+            Button("Done") { dismiss() }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
         } else if let preview = playlistPreview {
             Button("Import \(preview.episodes.count)") {
                 importResult = viewModel.importPlaylist(preview, categoryID: categoryID)
                 playlistPreview = nil
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
         } else {
             Button("Preview") { loadPlaylist() }
-                .buttonStyle(.glassProminent)
+                .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                 .disabled(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoadingPlaylist)
         }
     }

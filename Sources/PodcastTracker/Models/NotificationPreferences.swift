@@ -11,7 +11,7 @@ struct NotificationPreferences: Codable, Equatable, Sendable {
     var afternoon = TimeOfDay(hour: 14, minute: 0)
     var evening = TimeOfDay(hour: 20, minute: 0)
     var enabledWeekdays: Set<Int> = Set(1...7)
-    var quietHoursEnabled = false
+    var quietHoursEnabled = true
     var quietHoursStart = TimeOfDay(hour: 22, minute: 0)
-    var quietHoursEnd = TimeOfDay(hour: 7, minute: 0)
+    var quietHoursEnd = TimeOfDay(hour: 8, minute: 0)
 }

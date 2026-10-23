@@ -9,14 +9,17 @@ BUNDLE_ID="com.tangenix.podtrackio"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRATCH_DIR="$ROOT_DIR/.swift-build"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${PODTRACKIO_DIST_DIR:-$ROOT_DIR/dist}"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_EXECUTABLE_NAME"
 DMG_PATH="$ROOT_DIR/$APP_NAME.dmg"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+# Ad-hoc by default; set e.g. PODTRACKIO_SIGN_IDENTITY="Apple Development: you@example.com" for a stable
+# signature, which keeps Keychain items readable across rebuilds without prompts.
+SIGN_IDENTITY="${PODTRACKIO_SIGN_IDENTITY:--}"
 export DEVELOPER_DIR
 export CLANG_MODULE_CACHE_PATH="$SCRATCH_DIR/clang-module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$SCRATCH_DIR/swiftpm-module-cache"
@@ -56,7 +59,7 @@ build_app() {
     --target-device mac \
     --minimum-deployment-target 26.0 \
     --platform macosx
-  codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+  codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
 }
 
 verify_app() {

@@ -2,13 +2,18 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "com.tangenix.podtrackio"
+    private static let service = AppViewModel.demoMode ? "com.tangenix.podtrackio.demo" : "com.tangenix.podtrackio"
     private static let groqAccount = "groq-api-key"
     private static let transcriptAPIAccount = "transcriptapi-api-key"
     private static let authAccessTokenAccount = "supabase-access-token"
     private static let authRefreshTokenAccount = "supabase-refresh-token"
 
+    /// Keychain reads can block (and prompt on re-signed builds); read the Groq key once and cache it.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cachedGroqKey: String??
+
     static func saveGroqAPIKey(_ key: String) throws {
+        defer { cacheLock.withLock { cachedGroqKey = nil } }
         let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { throw KeychainError.emptyValue }
         let query: [String: Any] = [
@@ -25,6 +30,13 @@ enum KeychainStore {
     }
 
     static func groqAPIKey() -> String? {
+        if let cached = cacheLock.withLock({ cachedGroqKey }) { return cached }
+        let value = readGroqAPIKey()
+        cacheLock.withLock { cachedGroqKey = .some(value) }
+        return value
+    }
+
+    private static func readGroqAPIKey() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -39,6 +51,7 @@ enum KeychainStore {
     }
 
     static func removeGroqAPIKey() throws {
+        defer { cacheLock.withLock { cachedGroqKey = nil } }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

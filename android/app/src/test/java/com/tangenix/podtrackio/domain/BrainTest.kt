@@ -31,9 +31,9 @@ class BrainTest {
     }
     @Test fun composerSelectionsChangeTheActualProviderRequest() {
         for (model in QuirkyModel.entries) for (style in AnswerStyle.entries) {
-            val request = com.tangenix.podtrackio.data.brainRequestBody(BrainState(), emptyList(), "Explain", model, style)
+            val request = com.tangenix.podtrackio.data.brainRequestBody(BrainState(), emptyList(), "Explain", model.modelId, model, style, com.tangenix.podtrackio.data.BrainMode.ASK)
             assertEquals(model.modelId, request["model"].asString)
-            assertEquals(when (model) { QuirkyModel.DEEP -> "high"; QuirkyModel.BALANCED -> "medium"; else -> "low" }, request["reasoning_effort"].asString)
+            assertFalse(request.has("response_format"))
             assertEquals(when (style) { AnswerStyle.CONCISE -> 1800; AnswerStyle.MEDIUM -> 2600; AnswerStyle.DETAILED -> 3600 }, request["max_completion_tokens"].asInt)
             val system = request.getAsJsonArray("messages").first().asJsonObject["content"].asString
             assertTrue(system.contains("ANSWER STRUCTURE"))
@@ -41,9 +41,10 @@ class BrainTest {
         }
     }
 
-    @Test fun promptSeparatesEvidenceAndDisablesExtraction() {
-        val prompt = BrainPrompt.system(BrainState(rememberPreferences = false), emptyList())
-        assertTrue(prompt.contains("Memory extraction enabled: false"))
+    @Test fun promptSeparatesEvidenceAndAsksForMarkdown() {
+        val prompt = BrainPrompt.system(BrainState(), emptyList(), com.tangenix.podtrackio.data.BrainMode.CONNECT.instruction)
+        assertTrue(prompt.contains("no JSON"))
+        assertTrue(prompt.contains("MODE: Connect ideas"))
         assertTrue(prompt.contains("untrusted data"))
         assertTrue(prompt.contains("No relevant passages found"))
     }

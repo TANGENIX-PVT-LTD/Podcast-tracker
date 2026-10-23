@@ -27,7 +27,7 @@ struct IOSPlayerView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                ThemeBackdrop()
+                Color(.systemBackground).ignoresSafeArea()
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         player
@@ -46,9 +46,11 @@ struct IOSPlayerView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close", systemImage: "chevron.down") { dismiss() }
                 }
+                ToolbarItem(placement: .principal) { PlayerGoalChip() }
                 ToolbarItem(placement: .topBarTrailing) { actionMenu }
             }
         }
+        .overlay { PlayMomentsOverlay() }
         .sheet(isPresented: $showSchedule) { IOSSchedulePodcastSheet(podcast: currentPodcast) }
         .sheet(isPresented: $showPasteTranscript) { IOSPasteTranscriptSheet(podcast: currentPodcast) }
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.plainText, .data]) { result in
@@ -143,7 +145,7 @@ struct IOSPlayerView: View {
             }
             .font(.caption.weight(.medium))
 
-            if currentPodcast.hasProgress { ProgressView(value: currentPodcast.progressPercentage) }
+            if currentPodcast.hasProgress { ProgressView(value: currentPodcast.progressPercentage).tint(Play.Palette.error) }
 
             HStack(spacing: 10) {
                 Button(listenMode ? "Watching" : "Listen Mode", systemImage: listenMode ? "play.rectangle.fill" : "headphones") {
@@ -160,7 +162,10 @@ struct IOSPlayerView: View {
             GlassEffectContainer(spacing: 10) {
                 HStack(spacing: 10) {
                     Button(currentPodcast.isCompleted ? "Completed" : "Mark Complete", systemImage: currentPodcast.isCompleted ? "checkmark.circle.fill" : "checkmark.circle") {
-                        if !currentPodcast.isCompleted { viewModel.markCompleted(currentPodcast) }
+                        if !currentPodcast.isCompleted {
+                            viewModel.markCompleted(currentPodcast)
+                            PlayFeedback.play(.success, sound: false); PlayFeedback.sound("complete")
+                        }
                     }
                     .buttonStyle(.glass)
                     .disabled(currentPodcast.isCompleted)

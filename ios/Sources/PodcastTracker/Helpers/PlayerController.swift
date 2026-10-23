@@ -22,6 +22,7 @@ final class PlayerController: ObservableObject {
     private var sleepTimerObserver: Any?
 
     func seek(to seconds: Double) {
+        AppViewModel.shared.resetPlaybackCredit()
         let clamped = max(0, seconds)
         switch backend {
         case .native:

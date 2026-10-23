@@ -28,11 +28,12 @@ struct BrainTests {
         #expect(result.map { $0.text.count }.reduce(0, +) <= 300)
     }
 
-    @Test func promptDistinguishesEvidenceAndDisablesLearning() {
-        let prompt = BrainPrompt.system(goal: "Learn design", memories: [], sources: [], learn: false)
-        #expect(prompt.contains("Memory extraction enabled: false"))
+    @Test func promptDistinguishesEvidenceAndAsksForPlainMarkdown() {
+        let prompt = BrainPrompt.system(goal: "Learn design", memories: [], sources: [], mode: .connect)
         #expect(prompt.contains("No relevant passages found"))
         #expect(prompt.contains("untrusted data"))
+        #expect(prompt.contains("no JSON"))
+        #expect(prompt.contains("MODE: Connect ideas"))
     }
 
     @Test func graphKeepsProvenanceButBoundsKeywordEdges() {
@@ -53,15 +54,51 @@ struct BrainTests {
     @Test func composerSelectionsControlProviderRequest() throws {
         for model in QuirkyModel.allCases {
             for style in QuirkyAnswerStyle.allCases {
-                let body = BrainRequest.body(system: "Evidence policy", question: "Explain this", history: [], model: model, answerStyle: style)
+                let body = BrainRequest.body(system: "Evidence policy", question: "Explain this", history: [], modelID: model.modelID,
+                                             effort: model.reasoningEffort, temperature: model.temperature,
+                                             maxTokens: model.maximumCompletionTokens(for: style), answerStyle: style)
                 #expect(body["model"] as? String == model.modelID)
-                #expect(body["reasoning_effort"] as? String == model.reasoningEffort)
                 #expect(body["max_completion_tokens"] as? Int == model.maximumCompletionTokens(for: style))
+                #expect(body["response_format"] == nil)
                 let messages = try #require(body["messages"] as? [[String: String]])
                 #expect(messages.first?["content"]?.contains(style.writingInstruction) == true)
-                #expect(model == .balanced ? body["reasoning_format"] as? String == "hidden" : body["include_reasoning"] as? Bool == false)
             }
         }
+    }
+
+    @Test func reasoningParametersMatchEachModelFamily() {
+        let oss = GroqReasoning.parameters(modelID: "openai/gpt-oss-120b", effort: "high")
+        #expect(oss["reasoning_effort"] as? String == "high" && oss["include_reasoning"] as? Bool == false)
+        // Qwen rejects low/medium/high; it only accepts "none" or "default".
+        let qwen = GroqReasoning.parameters(modelID: "qwen/qwen3-32b", effort: "medium")
+        #expect(qwen["reasoning_effort"] as? String == "default" && qwen["reasoning_format"] as? String == "hidden")
+        #expect(GroqReasoning.parameters(modelID: "qwen/qwen3-32b", effort: "none")["reasoning_effort"] as? String == "none")
+        #expect(GroqReasoning.parameters(modelID: "llama-3.3-70b-versatile", effort: "high").isEmpty)
+    }
+
+    @Test func modelCatalogFallsBackToWhatTheKeyCanUse() throws {
+        let data = Data(#"{"data":[{"id":"openai/gpt-oss-20b","active":true},{"id":"llama-3.3-70b-versatile"},{"id":"whisper-large-v3"},{"id":"qwen/qwen3-32b","active":false}]}"#.utf8)
+        let ids = try #require(GroqModelCatalog.modelIDs(from: data))
+        #expect(!ids.contains("qwen/qwen3-32b"))
+        #expect(GroqModelCatalog.pick(.balanced, from: ids) == "openai/gpt-oss-20b")
+        #expect(GroqModelCatalog.pick(.deep, from: ids) == "llama-3.3-70b-versatile")
+        #expect(GroqModelCatalog.pick(.instant, from: ids, excluding: "openai/gpt-oss-20b") == "llama-3.3-70b-versatile")
+    }
+
+    @Test func lenientParsingKeepsGoodAnswers() {
+        #expect(BrainReplyParser.answer(from: "```json\n{\"answer\":\"Hi [S1]\"}\n```") == "Hi [S1]")
+        #expect(BrainReplyParser.answer(from: "## Answer\nPlain markdown") == "## Answer\nPlain markdown")
+        #expect(BrainReplyParser.memories(from: #"{"answer":"x"}"#).isEmpty)
+        #expect(BrainReplyParser.memories(from: #"Sure! {"memories":[{"text":"Likes examples","evidence":"I like examples"}]}"#).count == 1)
+        #expect(BrainCitations.sanitize("A [S1]. B [S7].", sourceCount: 2) == "A [S1]. B.")
+        #expect(BrainCitations.cited(in: "x [S2] y [S1] z [S2]") == [2, 1])
+        #expect(BrainCitations.timestamp(in: "[95s] hello [120s]") == 95)
+    }
+
+    @Test func groqErrorsAreSpecific() {
+        #expect(GroqClient.error(status: 403, data: Data(#"{"error":{"message":"Access denied. Please check your network settings."}}"#.utf8), retryAfter: nil) == .blocked)
+        #expect(GroqClient.error(status: 404, data: Data(), retryAfter: nil) == .modelUnavailable)
+        #expect(GroqClient.error(status: 429, data: Data(), retryAfter: "7") == .rateLimited(seconds: 7))
     }
 
     @Test func canvasConnectsDocumentsToRealEpisodeAnchors() {

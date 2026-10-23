@@ -1,7 +1,7 @@
 import SwiftUI
 
 private enum BrainWorkspace: String, CaseIterable, Identifiable {
-    case canvas = "Canvas", chat = "Chat", sources = "Sources"
+    case chat = "Chat", canvas = "Canvas", sources = "Sources"
     var id: String { rawValue }
 }
 
@@ -12,24 +12,34 @@ struct BrainView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var question = ""
     @State private var filter = ""
-    @State private var workspace = BrainWorkspace.canvas
+    @State private var workspace = BrainWorkspace.chat
+    @State private var mode = BrainMode.ask
     @State private var settings = false
     @State private var inspected: BrainSource?
     @State private var selectedSource: BrainSource?
     @State private var newChat = false
+    @State private var savedNoteID: UUID?
     @AppStorage("brain.selectedModel") private var model = QuirkyModel.balanced.rawValue
     @AppStorage("brain.answerStyle") private var answerStyle = QuirkyAnswerStyle.medium.rawValue
     @FocusState private var composerFocused: Bool
 
     private var currentModel: QuirkyModel { QuirkyModel(rawValue: model) ?? .balanced }
     private var currentStyle: QuirkyAnswerStyle { QuirkyAnswerStyle(rawValue: answerStyle) ?? .medium }
-    private var background: Color { scheme == .dark ? Color(red: 0.075, green: 0.078, blue: 0.102) : Color(red: 0.97, green: 0.975, blue: 0.983) }
-    private var surface: Color { scheme == .dark ? Color(red: 0.12, green: 0.125, blue: 0.157) : .white }
+    private var background: Color { scheme == .dark ? Color(hex: 0x131722) : Color(hex: 0xF7F7F7) }
+    private var surface: Color { scheme == .dark ? Color(hex: 0x1D2230) : .white }
+    private var episodeCount: Int { Set(brain.sources.map(\.podcastID)).count }
     private var documents: [BrainSource] {
         var seen = Set<String>()
         return brain.sources.filter { seen.insert("\($0.podcastID):\($0.kind)").inserted }
             .filter { filter.isEmpty || $0.title.localizedCaseInsensitiveContains(filter) || $0.text.localizedCaseInsensitiveContains(filter) }
             .sorted { $0.title == $1.title ? $0.kind < $1.kind : $0.title < $1.title }
+    }
+    private var recentTitles: [String] {
+        let weekAgo = Date().addingTimeInterval(-7 * 86_400)
+        return viewModel.podcasts.filter { ($0.lastWatchedDate ?? .distantPast) > weekAgo }.map(\.title)
+    }
+    private var canSend: Bool {
+        !brain.busy && (mode.allowsEmptyPrompt || !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     var body: some View {
@@ -60,19 +70,36 @@ struct BrainView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Label(source.kind, systemImage: symbol(source.kind)).font(.caption).foregroundStyle(.secondary)
-                        Text(source.title).font(.title2.bold())
+                        Text(source.title).font(Play.rounded(24, .heavy))
                         Text(source.text).font(.body).textSelection(.enabled)
-                        Button("Open episode", systemImage: "play.circle") {
-                            viewModel.selectedPodcast = viewModel.podcasts.first { $0.id == source.podcastID }; inspected = nil
-                        }.buttonStyle(.bordered)
+                        Button("Open episode", systemImage: "play.fill") { open(source); inspected = nil }
+                            .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
                     }.padding(24).frame(maxWidth: 680, alignment: .leading)
                 }.toolbar { Button("Done") { inspected = nil } }
             }.frame(minWidth: 320, minHeight: 400)
         }
+        #if os(iOS)
+        .fullScreenCover(item: $brain.quiz) { quiz in quizView(quiz) }
+        #else
+        .sheet(item: $brain.quiz) { quiz in quizView(quiz) }
+        #endif
         .confirmationDialog("Start a new Brain conversation?", isPresented: $newChat) {
             Button("Clear current conversation", role: .destructive) { brain.state.messages = []; brain.save(); workspace = .chat }
         } message: { Text("Your podcast knowledge and personal memories will stay available.") }
     }
+
+    private func quizView(_ quiz: BrainQuiz) -> some View {
+        PlayQuizView(title: quiz.title, questions: quiz.questions) { correct in
+            brain.recordQuizResult(correct: correct, total: quiz.questions.count)
+            // Active recall counts toward today's "recall or capture a takeaway" quest.
+            viewModel.habitLoop.reflect(on: LearningCalendar.dateKey(for: Date()))
+            viewModel.reconcileHabitLoop()
+            viewModel.saveData()
+            brain.quiz = nil
+        } onClose: { brain.quiz = nil }
+    }
+
+    // MARK: Header
 
     private var header: some View {
         VStack(spacing: 12) {
@@ -91,19 +118,18 @@ struct BrainView: View {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField("Search your learning", text: $filter).textFieldStyle(.plain)
                     if !filter.isEmpty { Button { filter = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).accessibilityLabel("Clear search") }
-                    #if os(macOS)
-                    Text("\(Set(brain.sources.map(\.podcastID)).count) episodes").font(.caption).foregroundStyle(.secondary)
-                    #endif
-                }.padding(.horizontal, 13).padding(.vertical, 11).background(surface, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.07)))
+                    Text("\(episodeCount) episodes").font(.caption).foregroundStyle(.secondary)
+                }.padding(.horizontal, 13).padding(.vertical, 11).chunkyCard(cornerRadius: 14, lip: 2)
             }
         }.padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 10)
     }
 
+    // MARK: Canvas & sources
+
     private var canvas: some View {
         ZStack(alignment: .bottomLeading) {
             BrainCanvasView(documents: documents) { source in
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { selectedSource = source }
+                withAnimation(reduceMotion ? nil : Play.Motion.snappy) { selectedSource = source }
             }
             if let source = selectedSource {
                 VStack(alignment: .leading, spacing: 10) {
@@ -112,124 +138,270 @@ struct BrainView: View {
                         Spacer()
                         Button { selectedSource = nil } label: { Image(systemName: "xmark").frame(width: 28, height: 28) }.buttonStyle(.plain).accessibilityLabel("Close selection")
                     }
-                    Text(source.title).font(.callout.weight(.semibold)).lineLimit(2)
-                    HStack(spacing: 12) {
-                        Button("Read source", systemImage: "doc.text") { inspected = source }.buttonStyle(.bordered)
-                        Button("Ask Brain", systemImage: "arrow.up.message") {
-                            question = "What are the key lessons from \(source.title)?"; workspace = .chat; composerFocused = true
-                        }.buttonStyle(.borderedProminent)
-                    }.controlSize(.small)
-                }.padding(14).frame(maxWidth: 350, alignment: .leading).background(surface, in: RoundedRectangle(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.primary.opacity(0.08)))
-                    .shadow(color: .black.opacity(0.1), radius: 20, y: 6).padding(.leading, 16).padding(.bottom, 82)
-                    .transition(.opacity)
+                    Text(source.title).font(Play.rounded(16, .heavy)).lineLimit(2)
+                    HStack(spacing: 10) {
+                        Button("Read") { inspected = source }.buttonStyle(.chunky(.secondary, size: .small))
+                        Button("Ask Brain") {
+                            question = "What are the key lessons from \(source.title)?"; mode = .ask; workspace = .chat; composerFocused = true
+                        }.buttonStyle(.chunky(.primary, size: .small))
+                    }
+                }.padding(14).frame(maxWidth: 350, alignment: .leading).chunkyCard(cornerRadius: 18)
+                    .padding(.leading, 16).padding(.bottom, 82)
+                    .transition(.scale(scale: 0.9, anchor: .bottomLeading).combined(with: .opacity))
             }
         }.clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 10)
     }
 
     private var sourceList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 10) {
                 ForEach(documents) { source in
                     Button { inspected = source } label: {
                         HStack(spacing: 14) {
-                            Image(systemName: symbol(source.kind)).font(.title3).foregroundStyle(.tint).frame(width: 40, height: 40).background(.tint.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 3) { Text(source.title).font(.callout.weight(.medium)); Text(source.kind).font(.caption).foregroundStyle(.secondary) }
-                            Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-                        }.padding(12).background(surface, in: RoundedRectangle(cornerRadius: 16))
-                    }.buttonStyle(.plain)
+                            Image(systemName: symbol(source.kind)).font(.title3.bold()).foregroundStyle(.white).frame(width: 42, height: 42)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(kindColor(source.kind)))
+                            VStack(alignment: .leading, spacing: 3) { Text(source.title).font(Play.rounded(15, .bold)).foregroundStyle(.primary); Text(source.kind).font(.caption).foregroundStyle(.secondary) }
+                            Spacer(); Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.secondary)
+                        }.padding(12)
+                    }.buttonStyle(ChunkyTileStyle(cornerRadius: 16))
                 }
             }.padding(18).frame(maxWidth: 820).frame(maxWidth: .infinity)
         }
     }
 
+    // MARK: Conversation
+
     private var conversation: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    if brain.state.messages.isEmpty {
-                        VStack(spacing: 14) {
-                            Image(systemName: "brain").font(.system(size: 32, weight: .light)).foregroundStyle(.tint)
-                            Text("Think with everything you've learned.").font(.title2.weight(.semibold)).multilineTextAlignment(.center)
-                            Text("Connect ideas across \(Set(brain.sources.map(\.podcastID)).count) episodes. Follow the evidence. Make your next move.").font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                            VStack(spacing: 8) {
-                                suggestion("What themes connect my podcasts?", symbol: "point.3.connected.trianglepath.dotted")
-                                suggestion("Turn my learning into a practical plan", symbol: "list.bullet.clipboard")
-                                suggestion("Help me design a prompt for my goals", symbol: "text.bubble")
-                            }.padding(.top, 14)
-                        }.frame(maxWidth: .infinity).padding(.top, 36)
-                    }
+                VStack(alignment: .leading, spacing: 26) {
+                    if !brain.hasKey || brain.needsKey { BrainKeySetupCard() }
+                    if brain.state.messages.isEmpty { emptyState }
                     ForEach(brain.state.messages) { message in
-                        if message.role == "user" {
-                            HStack { Spacer(minLength: 35); Text(message.text).textSelection(.enabled).padding(.horizontal, 18).padding(.vertical, 12).background(surface, in: RoundedRectangle(cornerRadius: 20)).frame(maxWidth: 650, alignment: .trailing) }.id(message.id)
-                        } else {
-                            VStack(alignment: .leading, spacing: 14) {
-                                Label("Brain", systemImage: "brain").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                                BrainAnswerText(text: message.text)
-                                HStack {
-                                    Button { copy(message.text) } label: { Label("Copy", systemImage: "doc.on.doc") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                                    if !message.sources.isEmpty {
-                                        Menu {
-                                            ForEach(Array(message.sources.enumerated()), id: \.element.id) { index, source in
-                                                Button("[S\(index + 1)] \(source.title) · \(source.kind)") { inspected = source }
-                                            }
-                                        } label: { Label("\(message.sources.count) sources", systemImage: "books.vertical") }.font(.caption)
-                                    }
-                                }
-                            }.frame(maxWidth: .infinity, alignment: .leading).id(message.id)
-                        }
+                        if message.role == "user" { userBubble(message) } else { answer(message) }
                     }
-                    if brain.busy { HStack(spacing: 10) { ProgressView().controlSize(.small); Text("\(modelTitle(currentModel)) · connecting your sources…").font(.callout).foregroundStyle(.secondary) } }
-                    if let error = brain.error {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.secondary)
-                            if let last = brain.state.messages.last, last.role == "user" { Button("Retry") { Task { await brain.ask(last.text, model: currentModel, answerStyle: currentStyle) } }.disabled(brain.busy) }
-                        }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
-                    }
+                    if brain.busy && brain.streamingID == nil { thinkingRow }
+                    if let error = brain.error { errorCard(error) }
                     Color.clear.frame(height: 1).id("bottom")
-                }.padding(24).frame(maxWidth: 800).frame(maxWidth: .infinity)
-            }.onChange(of: brain.state.messages.count) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+                }.padding(22).frame(maxWidth: 800).frame(maxWidth: .infinity)
+            }
+            .onChange(of: brain.state.messages.count) { _, _ in withAnimation(Play.Motion.gentle) { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: brain.state.messages.last?.text.count ?? 0) { _, _ in
+                if brain.streamingID != nil { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
         }
     }
 
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            EchoView(mood: .happy, size: 118)
+            Text("Think with everything you've learned.").font(Play.rounded(24, .heavy)).multilineTextAlignment(.center)
+            Text(episodeCount == 0
+                 ? "Generate a summary or import a transcript for an episode, and I'll be able to answer from it."
+                 : "I've read \(episodeCount) episode\(episodeCount == 1 ? "" : "s"). Ask, get quizzed, connect ideas or turn them into a plan.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            VStack(spacing: 10) {
+                ForEach(starters, id: \.0) { starter in
+                    Button {
+                        mode = starter.1
+                        send(starter.0)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: starter.1.symbol).font(.body.bold()).foregroundStyle(Play.themeTint).frame(width: 26)
+                            Text(starter.0).font(Play.rounded(15, .bold)).foregroundStyle(.primary).multilineTextAlignment(.leading)
+                            Spacer()
+                            Image(systemName: "arrow.up.right").font(.caption.bold()).foregroundStyle(.secondary)
+                        }.padding(14)
+                    }
+                    .buttonStyle(ChunkyTileStyle(cornerRadius: 16))
+                    .disabled(brain.busy || episodeCount == 0)
+                }
+            }.padding(.top, 6)
+        }.frame(maxWidth: .infinity).padding(.top, 18)
+    }
+
+    /// Starter prompts drawn from what the person is actually listening to.
+    private var starters: [(String, BrainMode)] {
+        let titles = viewModel.podcasts.filter { p in brain.sources.contains { $0.podcastID == p.id } }
+            .sorted { ($0.lastWatchedDate ?? .distantPast) > ($1.lastWatchedDate ?? .distantPast) }.map(\.title)
+        var list: [(String, BrainMode)] = []
+        if let first = titles.first { list.append(("Quiz me on \(first)", .quiz)); list.append(("What are the key lessons from \(first)?", .ask)) }
+        if titles.count > 1 { list.append(("Connect ideas across my episodes", .connect)) }
+        if !recentTitles.isEmpty { list.append(("Recap what I learned this week", .recap)) }
+        list.append(("Turn my learning into a 7-day plan", .plan))
+        return Array(list.prefix(4))
+    }
+
+    private func userBubble(_ message: BrainMessage) -> some View {
+        HStack {
+            Spacer(minLength: 40)
+            Text(message.text).font(Play.rounded(16, .semibold)).foregroundStyle(.white).textSelection(.enabled)
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Play.themeTint))
+                .frame(maxWidth: 620, alignment: .trailing)
+        }
+        .id(message.id)
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+
+    private func answer(_ message: BrainMessage) -> some View {
+        let streaming = brain.streamingID == message.id
+        let cited = BrainCitations.cited(in: message.text).filter { $0 >= 1 && $0 <= message.sources.count }
+        return HStack(alignment: .top, spacing: 10) {
+            EchoView(mood: streaming ? .talking : .idle, size: 44)
+            VStack(alignment: .leading, spacing: 12) {
+                if message.text.isEmpty && streaming {
+                    Text("…").font(Play.rounded(20, .heavy)).foregroundStyle(.secondary)
+                } else {
+                    BrainAnswerText(text: message.text)
+                }
+                if !streaming && !cited.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(cited, id: \.self) { number in
+                                let source = message.sources[number - 1]
+                                Button { open(source) } label: {
+                                    HStack(spacing: 6) {
+                                        Text("S\(number)").font(Play.rounded(12, .heavy)).foregroundStyle(.white)
+                                            .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(kindColor(source.kind)))
+                                        Text(source.title).font(Play.rounded(13, .bold)).lineLimit(1).frame(maxWidth: 180, alignment: .leading)
+                                        if BrainCitations.timestamp(in: source.text) != nil { Image(systemName: "play.fill").font(.caption2) }
+                                    }.padding(.horizontal, 10).padding(.vertical, 7)
+                                }
+                                .buttonStyle(ChunkyTileStyle(cornerRadius: 12))
+                                .help("Open \(source.title)")
+                            }
+                        }.padding(.bottom, 2)
+                    }
+                }
+                if !streaming && !message.text.isEmpty {
+                    HStack(spacing: 16) {
+                        Button { copy(message.text) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                        if let first = cited.first.map({ message.sources[$0 - 1] }) ?? message.sources.first {
+                            Button { saveNote(message, to: first) } label: {
+                                Label(savedNoteID == message.id ? "Saved to notes" : "Save as note", systemImage: savedNoteID == message.id ? "checkmark.circle.fill" : "square.and.arrow.down")
+                            }
+                            .foregroundStyle(savedNoteID == message.id ? Play.Palette.success : .secondary)
+                        }
+                        if !message.sources.isEmpty {
+                            Menu {
+                                ForEach(Array(message.sources.enumerated()), id: \.element.id) { index, source in
+                                    Button("[S\(index + 1)] \(source.title) · \(source.kind)") { inspected = source }
+                                }
+                            } label: { Label("\(message.sources.count) sources", systemImage: "books.vertical") }
+                                .menuStyle(.borderlessButton).fixedSize()
+                        }
+                    }
+                    .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .id(message.id)
+        .transition(.move(edge: .leading).combined(with: .opacity))
+    }
+
+    private var thinkingRow: some View {
+        HStack(spacing: 12) {
+            EchoView(mood: .thinking, size: 56)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(mode == .quiz ? "Writing your quiz…" : "Thinking it through…").font(Play.rounded(16, .heavy))
+                Text("\(currentModel == .deep ? "Deep Reasoning" : currentModel.title) · reading your sources").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .transition(.opacity)
+    }
+
+    private func errorCard(_ error: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            EchoView(mood: .worried, size: 52)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(error).font(.callout).fixedSize(horizontal: false, vertical: true)
+                if let last = brain.state.messages.last, last.role == "user" {
+                    Button("Try again") { Task { await brain.ask(last.text, mode: mode, model: currentModel, answerStyle: currentStyle, retry: true, recentTitles: recentTitles) } }
+                        .buttonStyle(.chunky(.danger, size: .small, fullWidth: false)).disabled(brain.busy)
+                }
+            }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .chunkyCard(cornerRadius: 16, fill: Play.Palette.error.opacity(scheme == .dark ? 0.16 : 0.08), border: Play.Palette.error.opacity(0.45))
+    }
+
+    // MARK: Composer
+
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("Ask anything about your learning…", text: $question, axis: .vertical)
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(BrainMode.allCases) { option in
+                        Button {
+                            withAnimation(Play.Motion.snappy) { mode = option }
+                            PlayFeedback.play(.select, sound: false)
+                        } label: {
+                            Label(option.title, systemImage: option.symbol).font(Play.rounded(13, .bold))
+                                .foregroundStyle(mode == option ? Play.themeTint : .secondary)
+                                .padding(.horizontal, 11).padding(.vertical, 7)
+                        }
+                        .buttonStyle(ChunkyTileStyle(selected: mode == option, cornerRadius: 12))
+                    }
+                }.padding(.horizontal, 2).padding(.top, 2)
+            }
+            TextField(mode.placeholder, text: $question, axis: .vertical)
                 .font(.body).textFieldStyle(.plain).lineLimit(1...6).focused($composerFocused)
-                .padding(.horizontal, 2).padding(.top, 2).onSubmit { send() }
+                .padding(.horizontal, 2).onSubmit { send() }
             HStack(spacing: 14) {
                 Menu {
                     Picker("AI mode", selection: $model) { ForEach(QuirkyModel.allCases) { Text(modelTitle($0)).tag($0.rawValue) } }
-                } label: { Label(modelTitle(currentModel), systemImage: currentModel.symbol).font(.caption.weight(.medium)) }
+                } label: { Label(modelTitle(currentModel), systemImage: currentModel.symbol).font(.caption.weight(.semibold)) }
                 .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("AI mode: \(modelTitle(currentModel))")
                 Menu {
                     Picker("Answer structure", selection: $answerStyle) { ForEach(QuirkyAnswerStyle.allCases) { Text(styleTitle($0)).tag($0.rawValue) } }
-                } label: { Label(styleTitle(currentStyle), systemImage: "text.alignleft").font(.caption.weight(.medium)) }
+                } label: { Label(styleTitle(currentStyle), systemImage: "text.alignleft").font(.caption.weight(.semibold)) }
                 .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Answer structure: \(styleTitle(currentStyle))")
                 Spacer(minLength: 0)
-                Button(action: send) {
-                    Image(systemName: "arrow.up").font(.system(size: 16, weight: .semibold)).foregroundStyle(scheme == .dark ? .black : .white)
-                        .frame(width: 38, height: 38).background(scheme == .dark ? Color.white : Color.primary, in: Circle())
-                        .opacity(brain.busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.3 : 1)
-                }.buttonStyle(.plain).frame(minWidth: 44, minHeight: 44).disabled(brain.busy || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).accessibilityLabel("Send question")
+                Button { send() } label: {
+                    Image(systemName: mode == .quiz ? "checklist" : "arrow.up").font(.system(size: 17, weight: .black)).frame(width: 22, height: 22)
+                }
+                .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
+                .disabled(!canSend)
+                .keyboardShortcut(.return, modifiers: .command)
+                .accessibilityLabel(mode == .quiz ? "Make quiz" : "Send question")
             }.foregroundStyle(.secondary)
-        }.padding(.horizontal, 18).padding(.vertical, 12).frame(maxWidth: 800)
-            .background(surface, in: RoundedRectangle(cornerRadius: 24))
-            .overlay(RoundedRectangle(cornerRadius: 24).strokeBorder(.primary.opacity(0.12)))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.14 : 0.04), radius: 16, y: 4)
-            .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 12)
-            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12).frame(maxWidth: 800)
+        .chunkyCard(cornerRadius: 22)
+        .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 10)
+        .frame(maxWidth: .infinity)
     }
 
-    private func suggestion(_ text: String, symbol: String) -> some View {
-        Button { question = text; composerFocused = true } label: { HStack { Image(systemName: symbol).foregroundStyle(.secondary); Text(text).font(.callout); Spacer(); Image(systemName: "arrow.up.left").font(.caption).foregroundStyle(.secondary) }.padding(13).background(surface, in: RoundedRectangle(cornerRadius: 14)) }.buttonStyle(.plain)
+    private func send(_ override: String? = nil) {
+        let text = override ?? question
+        guard !brain.busy, mode.allowsEmptyPrompt || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        question = ""; workspace = .chat
+        PlayFeedback.play(.tap, sound: false)
+        let chosenMode = mode
+        Task { await brain.ask(text, mode: chosenMode, model: currentModel, answerStyle: currentStyle, recentTitles: recentTitles) }
     }
-    private func send() {
-        guard !brain.busy, !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let text = question; question = ""; workspace = .chat
-        Task { await brain.ask(text, model: currentModel, answerStyle: currentStyle) }
+
+    /// Opens the cited episode, seeking to the passage's transcript timestamp when it has one.
+    private func open(_ source: BrainSource) {
+        guard let index = viewModel.podcasts.firstIndex(where: { $0.id == source.podcastID }) else { return }
+        if let seconds = BrainCitations.timestamp(in: source.text) { viewModel.podcasts[index].lastPlaybackPosition = seconds }
+        viewModel.selectPodcast(viewModel.podcasts[index])
     }
-    private func symbol(_ kind: String) -> String { kind == "Transcript" ? "doc.text" : kind == "Summary" ? "sparkles" : "bubble.left.and.bubble.right" }
+
+    private func saveNote(_ message: BrainMessage, to source: BrainSource) {
+        guard let podcast = viewModel.podcasts.first(where: { $0.id == source.podcastID }) else { return }
+        let stamp = Date().formatted(date: .abbreviated, time: .omitted)
+        let existing = podcast.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        viewModel.updateNotes(for: podcast.id, notes: (existing.isEmpty ? "" : existing + "\n\n") + "From Brain · \(stamp)\n" + message.text)
+        viewModel.reconcileHabitLoop()
+        savedNoteID = message.id
+        PlayFeedback.play(.success, sound: false); PlayFeedback.sound("pop")
+    }
+
+    private func symbol(_ kind: String) -> String { kind == "Transcript" ? "doc.text.fill" : kind == "Summary" ? "sparkles" : "bubble.left.and.bubble.right.fill" }
+    private func kindColor(_ kind: String) -> Color { kind == "Transcript" ? Play.Palette.gem : kind == "Summary" ? Color(hex: 0xCE82FF) : Play.Palette.flame }
     private func modelTitle(_ model: QuirkyModel) -> String { model == .deep ? "Deep Reasoning" : model.title }
     private func styleTitle(_ style: QuirkyAnswerStyle) -> String { style == .medium ? "Default" : style.title }
     private func copy(_ text: String) {
@@ -238,25 +410,79 @@ struct BrainView: View {
         #else
         UIPasteboard.general.string = text
         #endif
+        PlayFeedback.play(.tap, sound: false)
+    }
+}
+
+/// Inline Groq key setup, so Brain is usable without hunting through Settings.
+struct BrainKeySetupCard: View {
+    @ObservedObject private var brain = BrainStore.shared
+    @State private var key = ""
+    @State private var status: String?
+    @State private var testing = false
+    @State private var ok = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                EchoView(mood: ok ? .cheer : .thinking, size: 64)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(ok ? "Brain is connected!" : "Connect Brain in 30 seconds").font(Play.rounded(18, .heavy))
+                    Text("Brain uses your own free Groq API key. It's stored in your Keychain on this device only.")
+                        .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if !ok {
+                Link(destination: URL(string: "https://console.groq.com/keys")!) {
+                    Label("Get a free key at console.groq.com", systemImage: "arrow.up.right.square").font(Play.rounded(14, .bold))
+                }
+                SecureField("Paste your gsk_… key", text: $key)
+                    .textFieldStyle(.plain).padding(12).chunkyCard(cornerRadius: 12, lip: 2)
+                Button(testing ? "Checking…" : "Save & test") { Task { await save() } }
+                    .buttonStyle(.chunky(.success, size: .small))
+                    .disabled(testing || key.trimmingCharacters(in: .whitespacesAndNewlines).count < 20)
+            }
+            if let status { Text(status).font(.caption.weight(.semibold)).foregroundStyle(ok ? Play.Palette.success : Play.Palette.error) }
+        }
+        .padding(16)
+        .chunkyCard(cornerRadius: 20, border: ok ? Play.Palette.success : Play.themeTint.opacity(0.6))
+    }
+
+    private func save() async {
+        testing = true; defer { testing = false }
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await GroqClient.shared.testConnection(apiKey: trimmed)
+            try KeychainStore.saveGroqAPIKey(trimmed)
+            await GroqModelCatalog.shared.invalidate()
+            ok = true; status = "Connected. Ask me anything about your episodes."
+            brain.needsKey = false; brain.error = nil
+            PlayFeedback.play(.correct); key = ""
+        } catch {
+            status = error.localizedDescription
+            PlayFeedback.play(.wrong)
+        }
     }
 }
 
 private struct BrainAnswerText: View {
     let text: String
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(text.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, block in
                 if block.hasPrefix("#") {
-                    Text(block.replacingOccurrences(of: "^#{1,6}\\s*", with: "", options: .regularExpression)).font(.headline).padding(.top, 6)
+                    Text(block.replacingOccurrences(of: "^#{1,6}\\s*", with: "", options: .regularExpression)).font(Play.rounded(18, .heavy)).padding(.top, 4)
                 } else if block.hasPrefix("```") {
                     Text(block.components(separatedBy: "\n").dropFirst().dropLast().joined(separator: "\n")).font(.system(.callout, design: .monospaced)).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
                 } else {
-                    Text(.init(block)).font(.body).lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(.init(block))
+                        .font(.body).lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }.textSelection(.enabled)
     }
 }
+
 struct BrainSettingsView: View {
     @ObservedObject private var brain = BrainStore.shared
     @State private var newMemory = ""

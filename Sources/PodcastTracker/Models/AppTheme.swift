@@ -116,17 +116,9 @@ private struct ThemedCardModifier: ViewModifier {
     @AppStorage(AppTheme.storageKey) private var storedTheme = AppTheme.system.rawValue
     let cornerRadius: CGFloat
 
+    /// Themed cards share the Play layer's solid, lipped surface; the theme shows through the tint and backdrop.
     func body(content: Content) -> some View {
-        let theme = AppTheme(rawValue: storedTheme) ?? .system
-        content
-            .background {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(theme.tint.opacity(theme == .system ? 0.06 : 0.13))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(theme.tint.opacity(theme == .system ? 0.08 : 0.18), lineWidth: 1)
-            }
+        content.chunkyCard(cornerRadius: cornerRadius)
     }
 }
 

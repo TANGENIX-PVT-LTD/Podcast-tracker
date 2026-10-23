@@ -266,7 +266,7 @@ data class PodcastSummary(
 
 enum class QuirkyModel(val modelId: String, val label: String) {
     DEEP("openai/gpt-oss-120b", "Deep"),
-    BALANCED("qwen/qwen3.8-27b", "Balanced"),
+    BALANCED("qwen/qwen3-32b", "Balanced"),
     INSTANT("openai/gpt-oss-20b", "Instant"),
 }
 enum class AnswerStyle { CONCISE, MEDIUM, DETAILED }
@@ -294,37 +294,15 @@ data class FocusCommitment(
 
 data class HabitSettings(
     val adaptiveBuildUpEnabled: Boolean = true,
-    val currentDailyGoalMinutes: Double = 15.0,
-    val startingDailyGoalMinutes: Double = 15.0,
+    val currentDailyGoalMinutes: Double = 5.0,
+    val startingDailyGoalMinutes: Double = 5.0,
     val targetDailyGoalMinutes: Double = 60.0,
-    val buildUpStepMinutes: Double = 5.0,
+    val buildUpStepMinutes: Double = 1.0,
     val minimumQualifyingSessionMinutes: Double = 5.0,
     val lastEvaluatedWeekKey: String? = null,
     val lastWeeklyGoalAwardKey: String? = null,
 )
 
-object LearningCalendar {
-    fun evaluateBuildUp(
-        settings: HabitSettings,
-        activities: List<DailyLearningActivity>,
-        now: LocalDate = LocalDate.now(),
-    ): HabitSettings {
-        if (!settings.adaptiveBuildUpEnabled) return settings
-        val currentWeek = weekKey(now)
-        if (settings.lastEvaluatedWeekKey == currentWeek) return settings
-        val fields = WeekFields.of(Locale.getDefault())
-        val currentWeekStart = now.with(fields.dayOfWeek(), 1)
-        val previousStart = currentWeekStart.minusDays(7)
-        val successfulDays = activities.count { activity ->
-            val date = runCatching { LocalDate.parse(activity.dateKey) }.getOrNull()
-            date != null && !date.isBefore(previousStart) && date.isBefore(currentWeekStart) && activity.goalCompleted
-        }
-        val nextGoal = if (successfulDays >= 5) {
-            min(settings.currentDailyGoalMinutes + settings.buildUpStepMinutes, settings.targetDailyGoalMinutes)
-        } else settings.currentDailyGoalMinutes
-        return settings.copy(currentDailyGoalMinutes = nextGoal, lastEvaluatedWeekKey = currentWeek)
-    }
-}
 
 data class TimeOfDay(val hour: Int, val minute: Int)
 data class NotificationPreferences(
@@ -333,9 +311,9 @@ data class NotificationPreferences(
     val afternoon: TimeOfDay = TimeOfDay(14, 0),
     val evening: TimeOfDay = TimeOfDay(20, 0),
     val enabledWeekdays: Set<Int> = (1..7).toSet(),
-    val quietHoursEnabled: Boolean = false,
+    val quietHoursEnabled: Boolean = true,
     val quietHoursStart: TimeOfDay = TimeOfDay(22, 0),
-    val quietHoursEnd: TimeOfDay = TimeOfDay(7, 0),
+    val quietHoursEnd: TimeOfDay = TimeOfDay(8, 0),
 )
 
 data class DistractionPattern(
@@ -393,6 +371,7 @@ data class DownloadRecord(
 )
 
 data class AppSnapshot(
+    val habitLoop: HabitLoop = HabitLoop(),
     val brain: BrainState = BrainState(),
     val podcasts: List<Podcast> = emptyList(),
     val categories: List<LearningCategory> = LearningCategory.defaults,

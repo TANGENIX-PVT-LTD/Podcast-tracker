@@ -49,40 +49,10 @@ class ReminderScheduler(
     suspend fun reschedule(snapshot: AppSnapshot) {
         cancelKnownAlarms()
         val prefs = snapshot.notificationPreferences
-        if (prefs.isEnabled) {
-            val next = snapshot.podcasts.filterNot { it.isCompleted }.minByOrNull { it.dateAdded }
-            listOf(
-                Triple("morning", prefs.morning, "Your learning block is ready"),
-                Triple("afternoon", prefs.afternoon, "Protect five focused minutes"),
-                Triple("evening", prefs.evening, "Close the day with one useful idea"),
-            ).forEachIndexed { index, (name, time, title) ->
-                nextSeven(time).filter { calendarWeekday(it) in prefs.enabledWeekdays && !isQuiet(time, prefs) }.forEach { date ->
-                    schedule(
-                        requestCode = 10_000 + index * 10 + date.dayOfWeek.value,
-                        whenAt = date.toInstant(),
-                        title = title,
-                        body = next?.title ?: "Open PodTrackio and keep your learning streak moving.",
-                        podcastId = next?.id,
-                        channel = LEARNING_CHANNEL,
-                        key = name,
-                    )
-                }
-            }
-            DistractionPatternEngine.leadingPattern(snapshot.focusCommitments)?.let { pattern ->
-                val time = TimeOfDay(pattern.hour, pattern.minute)
-                nextSeven(time).firstOrNull { calendarWeekday(it) == pattern.weekday && pattern.weekday in prefs.enabledWeekdays && !isQuiet(time, prefs) }
-                    ?.let { date ->
-                        schedule(
-                            requestCode = 25_000 + pattern.weekday,
-                            whenAt = date.toInstant(),
-                            title = "Replace the pull before it starts",
-                            body = "Your ${pattern.cue.name.lowercase()} window is near. Reclaim five minutes with PodTrackio.",
-                            podcastId = next?.id,
-                            channel = LEARNING_CHANNEL,
-                            key = "adaptive-rescue",
-                        )
-                    }
-            }
+        com.tangenix.podtrackio.domain.HabitReminderPlanner.plan(snapshot).forEach { item ->
+            schedule(requestCode = 10_000 + item.slot * 10 + java.time.LocalDate.parse(item.day).dayOfWeek.value,
+                whenAt = item.fireTime, title = item.title, body = item.body, podcastId = item.podcastId,
+                channel = LEARNING_CHANNEL, key = item.id)
         }
         snapshot.podcasts.filter { !it.isCompleted && it.scheduledAt?.isAfter(Instant.now()) == true }.forEach { podcast ->
             schedule(

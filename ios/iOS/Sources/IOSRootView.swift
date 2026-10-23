@@ -86,10 +86,15 @@ struct IOSAppShell: View {
                 IOSRescueSheet()
             }
         }
-        .fullScreenCover(item: $viewModel.selectedPodcast) { podcast in
+        .fullScreenCover(item: $viewModel.selectedPodcast, onDismiss: {
+            PlayMoments.shared.playerClosed(viewModel: viewModel)
+        }) { podcast in
             IOSPlayerView(podcast: podcast)
         }
-        .overlay(alignment: .top) { notificationToasts }
+        .onChange(of: selectedTab) { PlayFeedback.play(.select, sound: false) }
+        .task { PlayMoments.shared.checkFreeze(viewModel: viewModel) }
+        .overlay(alignment: .top) { AchievementToast() }
+        .overlay { PlayMomentsOverlay(active: viewModel.selectedPodcast == nil) }
         .onChange(of: viewModel.showAddPodcast) { _, shown in
             if shown { activeSheet = .addEpisode; viewModel.showAddPodcast = false }
         }
@@ -116,38 +121,6 @@ struct IOSAppShell: View {
         case .brain: .brain
         }
     }
-
-    @ViewBuilder
-    private var notificationToasts: some View {
-        VStack(spacing: 8) {
-            if viewModel.showLevelUpAlert {
-                Label(
-                    "Level \(viewModel.stats.currentLevel.number) · \(viewModel.stats.currentLevel.title)",
-                    systemImage: viewModel.stats.currentLevel.iconName
-                )
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 11)
-                .background(.regularMaterial, in: Capsule())
-                .task {
-                    try? await Task.sleep(for: .seconds(3))
-                    viewModel.showLevelUpAlert = false
-                }
-            }
-            if viewModel.showAchievementPopup, let achievement = viewModel.newlyUnlockedAchievement {
-                Label(achievement.title, systemImage: achievement.iconName)
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 11)
-                    .background(.regularMaterial, in: Capsule())
-                    .task {
-                        try? await Task.sleep(for: .seconds(3))
-                        viewModel.showAchievementPopup = false
-                    }
-            }
-        }
-        .padding(.top, 8)
-    }
 }
 
 private struct IOSMiniPlayer: View {
@@ -173,7 +146,7 @@ private struct IOSMiniPlayer: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .podSoftCard(cornerRadius: 18)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
     }
 }
 
@@ -182,7 +155,7 @@ struct IOSLoginView: View {
 
     var body: some View {
         ZStack {
-            ThemeBackdrop()
+            Color(.systemBackground).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 30) {
                     Spacer(minLength: 48)
@@ -195,12 +168,14 @@ struct IOSLoginView: View {
 
                     VStack(spacing: 10) {
                         Text("PodTrackio")
-                            .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                            .font(.largeTitle.weight(.heavy))
                         Text("Turn podcasts into knowledge you keep.")
                             .font(.title3.weight(.medium))
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                     }
+
+                    EchoView(mood: .happy, size: 96)
 
                     IOSGlassSurface(cornerRadius: 28) {
                         VStack(spacing: 16) {
@@ -219,7 +194,7 @@ struct IOSLoginView: View {
                             } label: {
                                 Label("Continue with Google", systemImage: "globe")
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 48)
+                                    .frame(height: 40)
                             }
                             .buttonStyle(.glassProminent)
                             .disabled(authManager.isSigningIn)

@@ -244,17 +244,20 @@ private struct HabitSettingsView: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Adaptive Build-Up Mode", isOn: $viewModel.habitSettings.adaptiveBuildUpEnabled)
                 LabeledContent("Current target") { Text("\(Int(viewModel.habitSettings.currentDailyGoalMinutes)) minutes") }
-                Slider(value: $viewModel.habitSettings.currentDailyGoalMinutes, in: 5...180, step: 5)
-                LabeledContent("Long-term target") { Text("\(Int(viewModel.habitSettings.targetDailyGoalMinutes)) minutes") }
-                Slider(value: $viewModel.habitSettings.targetDailyGoalMinutes, in: max(5, viewModel.habitSettings.currentDailyGoalMinutes)...240, step: 5)
             } header: { Text("Daily learning") }
-              footer: { Text("At the start of each local week, the daily target rises by five minutes only after at least five successful days in the previous seven. It never drops automatically.") }
+              footer: { Text("Start at five minutes. Every two successful learning days add one minute, up to 60. Missed days hold your level. Today’s target stays fixed and syncs across devices.") }
             Section("Consistency") {
-                LabeledContent("Minimum streak session") { Text("\(Int(viewModel.habitSettings.minimumQualifyingSessionMinutes)) minutes") }
+                LabeledContent("Streak and app unlock goal") { Text("\(Int(viewModel.habitSettings.currentDailyGoalMinutes)) minutes") }
                 Stepper("Weekly goal: \(viewModel.stats.weeklyGoalHours.formatted()) hours", value: $viewModel.stats.weeklyGoalHours, in: 1...40, step: 0.5)
             }
+            Section("Feedback") {
+                Toggle("Celebration sounds", isOn: $viewModel.habitLoop.soundsEnabled)
+                Toggle("Trackpad haptics", isOn: $viewModel.habitLoop.hapticsEnabled)
+            }
+            #if DEBUG
+            PreviewMomentsSection()
+            #endif
             Section {
                 Toggle("Keep Rescue ready after login", isOn: Binding(
                     get: { launchAtLogin.isRequested },
@@ -419,7 +422,7 @@ private struct CategorySettingsView: View {
             HStack {
                 VStack(alignment: .leading) { Text("Categories").font(.title2.bold()); Text("Names can change without breaking podcast references.").foregroundStyle(.secondary) }
                 Spacer()
-                Button("New Category", systemImage: "plus") { editor = .new(sortOrder: viewModel.categories.count) }.buttonStyle(.glassProminent)
+                Button("New Category", systemImage: "plus") { editor = .new(sortOrder: viewModel.categories.count) }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
             }
             List {
                 ForEach(viewModel.categories) { category in
@@ -465,7 +468,7 @@ private struct CategoryEditorSheet: View {
             }.formStyle(.grouped).navigationTitle(draft.isNew ? "New Category" : "Edit Category")
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.buttonStyle(.glassProminent) }
+                    ToolbarItem(placement: .confirmationAction) { Button("Save") { save() }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false)) }
                 }
         }.frame(width: 450, height: 310)
     }
@@ -495,7 +498,7 @@ private struct DeleteCategorySheet: View {
                 }
             } else { Text("This category is unused and can be deleted immediately.") }
             if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
-            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Delete", role: .destructive) { remove() }.buttonStyle(.glassProminent).tint(.red) }
+            HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Delete", role: .destructive) { remove() }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false)).tint(.red) }
         }.padding(24).frame(width: 460)
     }
     private func remove() {
