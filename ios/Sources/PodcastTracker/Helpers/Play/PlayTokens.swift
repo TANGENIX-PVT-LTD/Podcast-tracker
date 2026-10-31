@@ -23,8 +23,8 @@ enum Play {
     }
 
     enum Motion {
-        static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.72)
-        static let bouncy = Animation.spring(response: 0.45, dampingFraction: 0.55)
+        static let snappy = Animation.spring(response: 0.28, dampingFraction: 1)
+        static let bouncy = Animation.spring(response: 0.45, dampingFraction: 1)
         static let gentle = Animation.spring(response: 0.6, dampingFraction: 0.85)
         static let stagger = 0.06
 
@@ -98,16 +98,8 @@ private struct PopModifier<V: Equatable>: ViewModifier {
     let value: V
     let scale: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var popped = false
-
     func body(content: Content) -> some View {
         content
-            .scaleEffect(popped ? scale : 1)
-            .onChange(of: value) {
-                guard !reduceMotion else { return }
-                withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) { popped = true }
-                withAnimation(Play.Motion.bouncy.delay(0.14)) { popped = false }
-            }
     }
 }
 

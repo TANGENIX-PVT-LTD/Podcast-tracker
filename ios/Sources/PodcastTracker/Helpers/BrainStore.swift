@@ -14,7 +14,7 @@ final class BrainStore: ObservableObject {
 
     init(url: URL? = nil) {
         self.url = url ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(AppViewModel.demoMode ? "PodcastTracker-Demo/brain_v1.json" : "PodcastTracker/brain_v1.json")
+            .appendingPathComponent("PodcastTracker/brain_v1.json")
         if FileManager.default.fileExists(atPath: self.url.path) {
             do { state = try JSONDecoder().decode(BrainState.self, from: Data(contentsOf: self.url)) }
             catch { readable = false; self.error = "Brain storage could not be read. Original data is preserved. \(error.localizedDescription)" }

@@ -263,7 +263,9 @@ final class SupabaseClient: @unchecked Sendable {
     }
 
     func upsertSummaries(_ summaries: [PodcastSummary]) async throws {
-        try await upsertOwnedRows(summaries.map(SummaryDTO.init), table: "podcast_summaries")
+        guard !summaries.isEmpty else { return }
+        let rows = try JSONSerialization.jsonObject(with: encoder.encode(summaries.map(SummaryDTO.init)))
+        _ = try await summaryRPC("merge_summary_rows", ["p_rows": rows])
     }
 
     func reassignAndDeleteCategory(id: String, replacementID: String?) async throws {
@@ -455,7 +457,7 @@ struct ActivityDTO: Codable {
     var model: DailyLearningActivity { .init(dateKey: dateKey, watchedSeconds: watchedSeconds, sessions: sessions, goalMinutes: goalMinutes, goalCompleted: goalCompleted, xpEarned: xpEarned, completedPodcastIDs: Set(completedPodcastIDs), xpAwardedMinutes: xpAwardedMinutes, dailyGoalXPAwarded: dailyGoalXPAwarded, weeklyGoalXPAwarded: weeklyGoalXPAwarded) }
 }
 
-struct SummaryDTO: Codable {
+struct SummaryDTO: Codable, Sendable {
     var podcastID: UUID; var brief: String; var keyTopics: [PodcastSummary.Topic]
     var majorTakeaways: [PodcastSummary.Takeaway]; var actionPlan: [PodcastSummary.ActionStep]
     var dynamicSections: [PodcastSummary.Section]?
@@ -472,4 +474,61 @@ struct SummaryDTO: Codable {
         transcriptSource = value.transcriptSource; modelName = value.model; actionPlanXPGranted = value.actionPlanXPGranted
     }
     var summary: PodcastSummary { .init(podcastID: podcastID, brief: brief, keyTopics: keyTopics, majorTakeaways: majorTakeaways, actionPlan: actionPlan, sections: dynamicSections ?? [], generatedAt: generatedAt, transcriptSource: transcriptSource, model: modelName, actionPlanXPGranted: actionPlanXPGranted) }
+}
+
+extension SupabaseClient {
+    private func summaryRPC(_ function: String, _ parameters: [String: Any]) async throws -> Data {
+        try await sendRequest(url: supabaseURL.appendingPathComponent("rest/v1/rpc/\(function)"), method: "POST",
+                              body: JSONSerialization.data(withJSONObject: parameters))
+    }
+    private func summaryJob(_ data: Data) throws -> SummaryJob {
+        guard let result = try decoder.decode([SummaryJob].self, from: data).first else { throw SummaryRoutingError.lostLease }
+        return result
+    }
+    func summaryHeartbeat(device: String, name: String, ready: Bool) async throws {
+        _ = try await summaryRPC("quirky_worker_heartbeat", ["p_device": device, "p_name": name, "p_ready": ready])
+    }
+    func enqueueSummary(id: UUID, requester: String, episode: SummaryEpisode, transcript: String?) async throws -> SummaryJob {
+        let payload = try JSONSerialization.jsonObject(with: encoder.encode(episode))
+        return try summaryJob(await summaryRPC("enqueue_summary_request", ["p_id": id.uuidString,
+            "p_requester": requester, "p_episode": payload, "p_transcript": transcript as Any? ?? NSNull()]))
+    }
+    func claimSummary(worker: String) async throws -> SummaryJob? {
+        try decoder.decode([SummaryJob].self, from: await summaryRPC("claim_ai_request", ["p_worker": worker])).first
+    }
+    func advanceSummary(_ id: UUID, requester: String) async throws -> SummaryJob {
+        try summaryJob(await summaryRPC("advance_summary_request", ["p_id": id.uuidString, "p_requester": requester]))
+    }
+    func renewSummary(_ id: UUID, executor: String, progress: String) async throws -> Bool {
+        try decoder.decode(Bool.self, from: await summaryRPC("renew_summary_request",
+            ["p_id": id.uuidString, "p_executor": executor, "p_progress": progress]))
+    }
+    func releaseSummary(_ id: UUID, worker: String, reason: String) async throws {
+        _ = try await summaryRPC("release_summary_to_cloud", ["p_id": id.uuidString, "p_worker": worker, "p_reason": reason])
+    }
+    func completeSummary(_ id: UUID, executor: String, summary: PodcastSummary) async throws -> SummaryJob {
+        let payload = try JSONSerialization.jsonObject(with: encoder.encode(SummaryDTO(summary)))
+        return try summaryJob(await summaryRPC("complete_summary_request",
+            ["p_id": id.uuidString, "p_executor": executor, "p_summary": payload]))
+    }
+    func failSummary(_ id: UUID, executor: String, reason: String) async throws {
+        _ = try await summaryRPC("fail_summary_request", ["p_id": id.uuidString, "p_executor": executor, "p_reason": reason])
+    }
+    func cancelSummary(_ id: UUID, requester: String) async throws {
+        _ = try await summaryRPC("cancel_summary_request", ["p_id": id.uuidString, "p_requester": requester])
+    }
+    func enqueueQuirky(id: UUID, requester: String, episode: SummaryEpisode, chat: QuirkyRequest, transcript: String?) async throws -> SummaryJob {
+        try summaryJob(await summaryRPC("enqueue_quirky_request", ["p_id": id.uuidString, "p_requester": requester,
+            "p_episode": JSONSerialization.jsonObject(with: encoder.encode(episode)),
+            "p_chat": JSONSerialization.jsonObject(with: encoder.encode(chat)), "p_transcript": transcript as Any? ?? NSNull()]))
+    }
+    func completeQuirky(_ id: UUID, executor: String, reply: QuirkyReply, transcript: String? = nil) async throws -> SummaryJob {
+        try summaryJob(await summaryRPC("complete_quirky_request", ["p_id": id.uuidString, "p_executor": executor,
+            "p_reply": JSONSerialization.jsonObject(with: encoder.encode(reply)), "p_transcript": transcript as Any? ?? NSNull()]))
+    }
+    func releaseQuirky(_ id: UUID, worker: String, reason: String, transcript: String?) async throws {
+        _ = try await summaryRPC("release_quirky_to_cloud", ["p_id": id.uuidString, "p_worker": worker,
+            "p_reason": reason, "p_transcript": transcript as Any? ?? NSNull()])
+    }
+
 }

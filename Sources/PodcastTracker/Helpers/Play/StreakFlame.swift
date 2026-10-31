@@ -22,8 +22,8 @@ struct StreakFlame: View {
     private static let core = SVGPath.parse(FlameSpec.core)
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || state == .ash || state == .frozen)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+        TimelineView(.animation(paused: true)) { _ in
+            let t: Double = 0
             Canvas { gc, canvas in
                 let scale = canvas.height / 122
                 gc.translateBy(x: (canvas.width - 100 * scale) / 2, y: 0)

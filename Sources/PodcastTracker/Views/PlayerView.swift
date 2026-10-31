@@ -7,13 +7,13 @@ struct PlayerView: View {
     @ObservedObject private var mediaStore = LocalMediaStore.shared
     let podcast: Podcast
     @StateObject private var playerController = PlayerController()
-    @State private var useNativePlayer = !DistributionChannel.isAppStore
+    @State private var useNativePlayer = false
     @State private var playbackFailed = false
     @State private var playbackAttemptID = UUID()
     @State private var nativeRetryCount = 0
     @State private var showFileImporter = false
     @State private var showPasteSheet = false
-    @State private var playbackSource: NativePlaybackSource? = DistributionChannel.isAppStore ? .stream : nil
+    @State private var playbackSource: NativePlaybackSource = .stream
     @State private var isPreparingDownload = false
     @State private var playbackChoiceError: String?
     @State private var showScheduleSheet = false
@@ -23,9 +23,7 @@ struct PlayerView: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if playbackSource == nil {
-                    playbackChoiceView
-                } else if playbackFailed {
+                if playbackFailed {
                     unavailableView
                 } else if useNativePlayer {
                     let attemptID = playbackAttemptID
@@ -33,7 +31,7 @@ struct PlayerView: View {
                         videoId: currentPodcast.youtubeVideoId,
                         startPosition: currentPodcast.lastPlaybackPosition,
                         reloadID: attemptID,
-                        source: playbackSource ?? .stream,
+                        source: playbackSource,
                         controller: playerController,
                         onTimeUpdate: { viewModel.updatePlaybackPosition(for: currentPodcast.id, position: $0) },
                         onDurationReady: { viewModel.updateDuration(for: currentPodcast.id, duration: $0) },
@@ -51,6 +49,7 @@ struct PlayerView: View {
                         onPlayStateChange: handlePlayStateChange,
                         onError: { playbackFailed = true }
                     )
+                    .id(playbackAttemptID)
                 }
             }
             .aspectRatio(16 / 9, contentMode: .fit)
@@ -107,6 +106,12 @@ struct PlayerView: View {
                 viewModel.generateSummary(for: currentPodcast, transcript: document)
             }
         }
+        .alert("Download failed", isPresented: Binding(
+            get: { playbackChoiceError != nil },
+            set: { if !$0 { playbackChoiceError = nil } }
+        )) { Button("OK") { playbackChoiceError = nil } } message: {
+            Text(playbackChoiceError ?? "")
+        }
         .sheet(isPresented: $showPasteSheet) { PasteTranscriptSheet(podcast: currentPodcast) }
         .sheet(isPresented: $showScheduleSheet) {
             SchedulePodcastSheet(podcast: currentPodcast, initialDate: currentPodcast.scheduledAt ?? Date().addingTimeInterval(60 * 60))
@@ -114,7 +119,6 @@ struct PlayerView: View {
         }
         .task(id: currentPodcast.id) {
             resetPlayback()
-            chooseInitialPlaybackSource()
             startRequestedPlaybackIfNeeded()
         }
         .onChange(of: viewModel.playbackStartRequest) { _, request in
@@ -156,7 +160,7 @@ struct PlayerView: View {
     private func resetPlayback() {
         nativeRetryCount = 0
         playbackFailed = false
-        useNativePlayer = true
+        chooseInitialPlaybackSource()
         playbackAttemptID = UUID()
     }
 
@@ -169,14 +173,15 @@ struct PlayerView: View {
         if mediaStore.cachedPlayableURL(videoId: currentPodcast.youtubeVideoId) != nil {
             playbackSource = .local
         } else {
-            playbackSource = nil
+            playbackSource = .stream
         }
+        useNativePlayer = playbackSource == .local
         #endif
     }
 
     private func stream() {
         playbackChoiceError = nil
-        useNativePlayer = !DistributionChannel.isAppStore
+        useNativePlayer = false
         playbackFailed = false
         nativeRetryCount = 0
         playbackSource = .stream
@@ -215,55 +220,12 @@ struct PlayerView: View {
         case .downloaded:
             Button("Delete Download", systemImage: "trash", role: .destructive) {
                 viewModel.deleteDownload(currentPodcast)
-                playbackSource = nil
+                stream()
             }
             .buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
         }
     }
     #endif
-
-    private var playbackChoiceView: some View {
-        #if APP_STORE
-        ProgressView("Preparing secure streaming…")
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black)
-            .foregroundStyle(.white)
-        #else
-        VStack(spacing: 16) {
-            Image(systemName: "play.rectangle.on.rectangle")
-                .font(.system(size: 42))
-                .foregroundStyle(.secondary)
-            Text(isPreparingDownload ? "Downloading for offline playback…" : "How do you want to play this episode?")
-                .font(.headline)
-            if isPreparingDownload {
-                ProgressView().controlSize(.large)
-                if let bytes = mediaStore.activeDownloadedBytes[currentPodcast.youtubeVideoId], bytes > 0 {
-                    Text("\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) downloaded")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Text("\(mediaStore.settings.quality.title) · \(ByteCountFormatter.string(fromByteCount: mediaStore.remainingStorageBytes, countStyle: .file)) available")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Cancel Download") { viewModel.cancelDownload(currentPodcast) }
-            } else {
-                Text("Streaming uses no permanent storage. Downloading makes the complete video available offline.")
-                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                HStack(spacing: 10) {
-                    Button("Stream", systemImage: "play.fill") { stream() }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
-                    Button("Download & Play", systemImage: "arrow.down.circle") { downloadAndPlay() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
-                    Button("Cancel") { viewModel.selectedPodcast = nil }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
-                }
-            }
-            if let playbackChoiceError {
-                Text(playbackChoiceError).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
-            }
-        }
-        .padding(28)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.black)
-        .foregroundStyle(.white)
-        #endif
-    }
 
     private var unavailableView: some View {
         VStack(spacing: 14) {
@@ -400,50 +362,68 @@ private struct SummaryInspector: View {
     @Binding var showFileImporter: Bool
     @Binding var showPasteSheet: Bool
 
+    @State private var cachedTranscript: TranscriptDocument?
+    @State private var showTranscript = false
+
     var body: some View {
-        if let summary = viewModel.summary(for: podcast.id) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    Text(summary.brief).font(.body).textSelection(.enabled).lineSpacing(4)
-                    if summary.sections.isEmpty {
-                        legacySections(summary)
-                    } else {
-                        ForEach(summary.sections) { section in
-                            SummarySection(section.title, symbol: "text.book.closed") {
-                                if let introduction = section.introduction { Text(introduction).foregroundStyle(.secondary).textSelection(.enabled) }
-                                ForEach(Array(section.points.enumerated()), id: \.element.id) { index, point in
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        HStack(alignment: .firstTextBaseline) {
-                                            Text("\(index + 1)").foregroundStyle(.secondary).monospacedDigit()
-                                            Text(point.title).font(.headline)
-                                            Spacer()
-                                            if let seconds = point.timestampSeconds {
-                                                Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)).controlSize(.small)
+        Group {
+            if let summary = viewModel.summary(for: podcast.id) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 26) {
+                        Text(summary.brief).font(.body).textSelection(.enabled).lineSpacing(4)
+                        if summary.sections.isEmpty {
+                            legacySections(summary)
+                        } else {
+                            ForEach(summary.sections) { section in
+                                SummarySection(section.title, symbol: "text.book.closed") {
+                                    if let introduction = section.introduction { Text(introduction).foregroundStyle(.secondary).textSelection(.enabled) }
+                                    ForEach(Array(section.points.enumerated()), id: \.element.id) { index, point in
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            HStack(alignment: .firstTextBaseline) {
+                                                Text("\(index + 1)").foregroundStyle(.secondary).monospacedDigit()
+                                                Text(point.title).font(.headline)
+                                                Spacer()
+                                                if let seconds = point.timestampSeconds {
+                                                    Button(seconds.formattedTimestamp) { playerController.seek(to: seconds) }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)).controlSize(.small)
+                                                }
                                             }
-                                        }
-                                        Text(point.explanation).foregroundStyle(.secondary).textSelection(.enabled)
-                                    }.padding(.vertical, 5)
+                                            Text(point.explanation).foregroundStyle(.secondary).textSelection(.enabled)
+                                        }.padding(.vertical, 5)
+                                    }
                                 }
                             }
                         }
-                    }
-                    if !summary.actionPlan.isEmpty {
-                        SummarySection("Try this", symbol: "checklist") {
-                            ForEach(summary.actionPlan) { action in
-                                Toggle(isOn: Binding(
-                                    get: { viewModel.summary(for: podcast.id)?.actionPlan.first(where: { $0.id == action.id })?.isCompleted ?? false },
-                                    set: { _ in viewModel.toggleAction(podcastID: podcast.id, actionID: action.id) }
-                                )) { VStack(alignment: .leading, spacing: 3) { Text(action.title).font(.headline); Text(action.detail).font(.caption).foregroundStyle(.secondary) } }
-                                .toggleStyle(.checkbox).padding(.vertical, 4)
+                        if !summary.actionPlan.isEmpty {
+                            SummarySection("Try this", symbol: "checklist") {
+                                ForEach(summary.actionPlan) { action in
+                                    Toggle(isOn: Binding(
+                                        get: { viewModel.summary(for: podcast.id)?.actionPlan.first(where: { $0.id == action.id })?.isCompleted ?? false },
+                                        set: { _ in viewModel.toggleAction(podcastID: podcast.id, actionID: action.id) }
+                                    )) { VStack(alignment: .leading, spacing: 3) { Text(action.title).font(.headline); Text(action.detail).font(.caption).foregroundStyle(.secondary) } }
+                                    .toggleStyle(.checkbox).padding(.vertical, 4)
+                                }
                             }
                         }
-                    }
-                    Text("Generated \(summary.generatedAt.formatted(date: .abbreviated, time: .shortened)) · \(summary.model)")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }.padding(20)
+                        if cachedTranscript != nil {
+                            Button("View Transcript", systemImage: "text.alignleft") { showTranscript = true }
+                        }
+                        Text("Generated \(summary.generatedAt.formatted(date: .abbreviated, time: .shortened)) · \(summary.model)")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    }.padding(20)
+                }
+            } else {
+                summaryEmptyState
             }
-        } else {
-            summaryEmptyState
+        }
+        .task(id: podcast.id) {
+            cachedTranscript = DataManager.shared.loadTranscript(for: podcast.id)
+
+        }
+        .onChange(of: viewModel.summaryState) { _, _ in
+            cachedTranscript = DataManager.shared.loadTranscript(for: podcast.id)
+        }
+        .sheet(isPresented: $showTranscript) {
+            if let cachedTranscript { SavedTranscriptView(document: cachedTranscript, title: podcast.title) }
         }
     }
 
@@ -459,29 +439,41 @@ private struct SummaryInspector: View {
     }
 
     private var summaryEmptyState: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            Image(systemName: "text.document.badge.sparkles").font(.system(size: 38)).foregroundStyle(.secondary)
-            Text("Turn this episode into a study guide").font(.title3.bold())
-            Text(statusCopy).multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 330)
-            progressControls
-            Spacer()
-            HStack {
-                Button("Paste Transcript") { showPasteSheet = true }
-                Button("Import File…") { showFileImporter = true }
-            }.buttonStyle(.link)
-        }.padding(24)
+        ScrollView {
+            VStack(spacing: 18) {
+                Image(systemName: "text.document.badge.sparkles").font(.system(size: 38)).foregroundStyle(.secondary)
+                Text("Turn this episode into a study guide").font(.title3.bold())
+                Text(statusCopy).multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 330)
+                progressControls
+                if let cachedTranscript {
+                    Button("View Saved Transcript", systemImage: "text.alignleft") { showTranscript = true }
+                    Text("\(cachedTranscript.text.split(whereSeparator: \.isWhitespace).count.formatted()) words saved · \(cachedTranscript.source == .appleSpeech ? "Apple on-device transcription" : "episode transcript")")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button("Paste Transcript") { showPasteSheet = true }
+                    Button("Import File…") { showFileImporter = true }
+                }.buttonStyle(.link)
+            }
+            .padding(24).frame(maxWidth: .infinity)
+        }
     }
 
     private var statusCopy: String {
         switch viewModel.summaryState {
-        case .idle, .completed: "PodTrackio fetches a timestamped transcript through TranscriptAPI, then Groq turns it into a study guide."
+        case .contactingMac: "Checking your Mac…"
+        case .waitingForMac(let detail): detail
+        case .cloudFallback: "On-device attempts did not finish. Trying transcript APIs and Groq automatically…"
+        case .retryingOnDevice: "The first on-device attempt failed. Retrying on this Mac · attempt 2 of 2…"
+        case .idle, .completed: "Generate a study guide automatically. This Mac tries on-device, retries once, then uses the APIs if needed."
         case .fetchingTranscript: "Fetching a timestamped transcript from TranscriptAPI…"
         case .fetchingCaptions: "Looking for public captions…"
-        case .needsAudioConsent: "No public captions were available. Audio transcription downloads media and consumes Groq credits."
+        case .preparingLocalTranscription: "Preparing Apple speech recognition and the episode audio. A language model may download on first use…"
+        case .transcribingOnDevice: "Transcribing the episode on this Mac…"
         case .downloadingAudio(let progress): "Downloading the lowest suitable audio stream… \(Int(progress * 100))%"
         case .transcribing(let current, let total): "Transcribing audio chunk \(current) of \(total)…"
-        case .synthesizing: "Finding the ideas, frameworks, examples, and actions that are actually in this video…"
+        case .summarizingOnDevice(let current, let total): "Creating your study guide on this Mac · passage \(current) of \(total)…"
+        case .synthesizing: "Combining the episode’s lessons and actions on this Mac…"
         case .needsTranscriptImport(let reason): "Automatic extraction failed: \(reason)"
         case .failed(let message): message
         }
@@ -490,16 +482,8 @@ private struct SummaryInspector: View {
     @ViewBuilder private var progressControls: some View {
         GlassEffectContainer(spacing: 10) {
             switch viewModel.summaryState {
-            case .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .synthesizing:
+            case .contactingMac, .waitingForMac, .cloudFallback, .retryingOnDevice, .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .preparingLocalTranscription, .transcribingOnDevice, .summarizingOnDevice, .synthesizing:
                 HStack { ProgressView(); Button("Cancel") { viewModel.cancelSummaryGeneration() }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)) }
-            case .needsAudioConsent:
-                HStack {
-                    Button("Transcribe Audio", systemImage: "waveform") { viewModel.generateSummary(for: podcast, allowAudioTranscription: true) }
-                        .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
-                    Button("Import Instead") { showFileImporter = true }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false))
-                }
-            case .needsTranscriptImport:
-                HStack { Button("Paste") { showPasteSheet = true }.buttonStyle(.chunky(.primary, size: .small, fullWidth: false)); Button("Import") { showFileImporter = true }.buttonStyle(.chunky(.secondary, size: .small, fullWidth: false)) }
             default:
                 Button("Generate Summary", systemImage: "sparkles") { viewModel.generateSummary(for: podcast) }
                     .buttonStyle(.chunky(.primary, size: .small, fullWidth: false))
@@ -537,6 +521,7 @@ private struct TranscriptChatInspector: View {
     let podcast: Podcast
     @State private var draft = ""
     @State private var isThinking = false
+    @State private var answerProgress = "Checking on-device AI…"
     @State private var errorMessage: String?
     @State private var responseTask: Task<Void, Never>?
     @AppStorage("quirky.selectedModel") private var selectedModelRaw = QuirkyModel.balanced.rawValue
@@ -563,7 +548,7 @@ private struct TranscriptChatInspector: View {
             QuirkyMark(size: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Quirky").font(.headline)
-                Text("Your transcript mentor").font(.caption).foregroundStyle(.secondary)
+                Text("On-device first · API fallback").font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             modelMenu
@@ -603,7 +588,7 @@ private struct TranscriptChatInspector: View {
                             HStack(alignment: .center, spacing: 10) {
                                 QuirkyMark(size: 28)
                                 ProgressView().controlSize(.small)
-                                Text("Quirky is thinking with \(selectedModel.title.lowercased()) reasoning…").font(.callout).foregroundStyle(.secondary)
+                                Text(answerProgress).font(.callout).foregroundStyle(.secondary)
                                 Spacer()
                             }
                         }
@@ -628,7 +613,7 @@ private struct TranscriptChatInspector: View {
                     TextField("Ask Quirky about this video…", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain).lineLimit(1...5).focused($composerFocused).onSubmit { send() }
                     HStack(spacing: 10) {
-                        Label(selectedModel.title, systemImage: selectedModel.symbol)
+                        Label("API fallback: \(selectedModel.title)", systemImage: selectedModel.symbol)
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.secondary)
                         Label("Transcript", systemImage: "text.quote")
@@ -661,7 +646,7 @@ private struct TranscriptChatInspector: View {
                 }
             }
         } label: {
-            Label(selectedModel.title, systemImage: selectedModel.symbol).font(.caption.weight(.medium))
+            Label("API fallback: \(selectedModel.title)", systemImage: selectedModel.symbol).font(.caption.weight(.medium))
         }
         .menuStyle(.borderlessButton)
         .disabled(isThinking)
@@ -691,16 +676,17 @@ private struct TranscriptChatInspector: View {
 
     private func send(_ suggestedQuestion: String? = nil) {
         let question = (suggestedQuestion ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !question.isEmpty else { return }
+        guard !question.isEmpty, !isThinking else { return }
         let model = selectedModel
         let style = answerStyle
         let history = messages.map { ($0.role == .user ? "user" : "assistant", $0.text) }
         draft = ""; errorMessage = nil; viewModel.appendQuirkyMessage(.init(role: .user, text: question, model: nil), podcastID: podcast.id); isThinking = true
         responseTask = Task {
+            defer { isThinking = false }
             do {
-                let answer = try await viewModel.askTranscriptQuestion(for: podcast, question: question, history: history, model: model, answerStyle: style)
+                let answer = try await viewModel.askTranscriptQuestion(for: podcast, question: question, history: history, model: model, answerStyle: style, progress: { answerProgress = $0 })
                 guard !Task.isCancelled else { return }
-                viewModel.appendQuirkyMessage(.init(role: .quirky, text: answer, model: model, answerStyle: style), podcastID: podcast.id); isThinking = false
+                viewModel.appendQuirkyMessage(.init(id: answer.id, role: .quirky, text: answer.text, model: model, answerStyle: style, source: answer.source), podcastID: podcast.id); isThinking = false
             } catch is CancellationError {
                 return
             } catch {
@@ -741,7 +727,8 @@ private struct QuirkyMessageRow: View {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 6) {
                         Text("Quirky").font(.caption.bold())
-                        if let model = message.model { Text(model.title).font(.caption2).foregroundStyle(.tertiary) }
+                        if let source = message.source { Text(source).font(.caption2).foregroundStyle(.tertiary) }
+                        else if let model = message.model { Text("Groq · \(model.title)").font(.caption2).foregroundStyle(.tertiary) }
                         if let style = message.answerStyle {
                             Text("·").foregroundStyle(.tertiary)
                             Text(style.title).font(.caption2).foregroundStyle(.tertiary)
@@ -861,5 +848,42 @@ private extension Double {
     var formattedTimestamp: String {
         let total = Int(self), hours = total / 3600, minutes = (total % 3600) / 60, seconds = total % 60
         return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, seconds) : String(format: "%d:%02d", minutes, seconds)
+    }
+}
+
+private struct SavedTranscriptView: View {
+    let document: TranscriptDocument
+    let title: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Transcript").font(.title2.bold())
+                    Text(title).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if document.segments.isEmpty {
+                        Text(document.text).textSelection(.enabled)
+                    } else {
+                        ForEach(Array(document.segments.enumerated()), id: \.offset) { _, segment in
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(segment.startSeconds.formattedTimestamp).font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
+                                Text(segment.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ShareLink(item: document.text) { Label("Share Transcript", systemImage: "square.and.arrow.up") }
+        }
+        .padding(24).frame(minWidth: 520, idealWidth: 680, minHeight: 420, idealHeight: 600)
     }
 }

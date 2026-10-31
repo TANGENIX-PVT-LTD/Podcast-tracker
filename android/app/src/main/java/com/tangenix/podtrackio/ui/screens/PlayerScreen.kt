@@ -77,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -136,6 +137,7 @@ fun PlayerScreen(
     val currentPodcast = ui.snapshot.podcasts.firstOrNull { it.id == podcast.id } ?: podcast
 
     androidx.activity.compose.BackHandler { if (fullScreen) fullScreen = false else viewModel.selectPodcast(null) }
+    var offlinePlaybackFailed by remember(podcast.id) { mutableStateOf(false) }
     var toolsVisible by rememberSaveable(podcast.id) { mutableStateOf(true) }
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val wide = configuration.screenWidthDp >= 900
@@ -153,8 +155,9 @@ fun PlayerScreen(
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 // A stable composition keeps the same Media3 player alive when fullscreen or tools change.
                 Box(Modifier.fillMaxWidth().weight(1f).background(Color.Black)) {
-                    if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest)
-                    else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
+                    if (ui.snapshot.downloads.containsKey(podcast.youtubeVideoId) && !offlinePlaybackFailed) {
+                        NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest) { offlinePlaybackFailed = true }
+                    } else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
                     Surface(Modifier.align(Alignment.TopEnd).padding(12.dp), color = Color.Black.copy(alpha = .66f), shape = RoundedCornerShape(12.dp)) {
                         IconButton({ fullScreen = !fullScreen }, Modifier.size(48.dp)) {
                             Icon(if (fullScreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
@@ -330,11 +333,13 @@ private fun VideoWorkspace(
     modifier: Modifier,
     onFullScreen: () -> Unit,
 ) {
+    var offlinePlaybackFailed by remember(podcast.id) { mutableStateOf(false) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             Card(Modifier.fillMaxSize(), shape = RoundedCornerShape(22.dp)) {
-                if (viewModel.externalMediaToolsAvailable) NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest)
-                else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
+                if (ui.snapshot.downloads.containsKey(podcast.youtubeVideoId) && !offlinePlaybackFailed) {
+                    NativePlayer(podcast, viewModel, seekRequest, ui.playbackStartRequest) { offlinePlaybackFailed = true }
+                } else EmbeddedYouTubePlayer(podcast, viewModel, ui.playbackStartRequest, seekRequest)
             }
             Surface(
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
@@ -358,15 +363,14 @@ private fun VideoWorkspace(
 
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekRequest: Pair<Long, Double>?, playRequest: String?) {
+private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekRequest: Pair<Long, Double>?, playRequest: String?, onFailure: () -> Unit) {
     val context = LocalContext.current
     var mediaUri by remember(podcast.id) { mutableStateOf<String?>(null) }
-    var error by remember(podcast.id) { mutableStateOf<String?>(null) }
     var player by remember(podcast.id) { mutableStateOf<ExoPlayer?>(null) }
     LaunchedEffect(podcast.id) {
         runCatching { viewModel.playbackUri(podcast.id) }
             .onSuccess { mediaUri = it }
-            .onFailure { error = it.message ?: "Could not prepare this episode." }
+            .onFailure { onFailure() }
     }
     DisposableEffect(mediaUri) {
         val uri = mediaUri
@@ -374,6 +378,7 @@ private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekR
             val instance = ExoPlayer.Builder(context).build().apply {
                 val observed = this
                 addListener(object : Player.Listener {
+                    override fun onPlayerError(error: PlaybackException) { onFailure() }
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         if (isPlaying) viewModel.beginPlaybackCredit(podcast.id, observed.currentPosition / 1_000.0)
                         else viewModel.resetPlaybackCredit()
@@ -413,12 +418,6 @@ private fun NativePlayer(podcast: Podcast, viewModel: PodTrackioViewModel, seekR
         seekRequest?.second?.let { seconds -> player?.seekTo((seconds * 1_000).toLong()) }
     }
     when {
-        error != null -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(error.orEmpty(), color = Color.White)
-                TextButton(onClick = { error = null; mediaUri = null }) { Icon(Icons.Rounded.Refresh, null); Text("Try again") }
-            }
-        }
         player == null -> Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else -> AndroidView(
             factory = { PlayerView(it).apply { this.player = player; useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING) } },
@@ -464,7 +463,7 @@ private fun EmbeddedYouTubePlayer(podcast: Podcast, viewModel: PodTrackioViewMod
                         }
                     }, "PodTrackioLearning")
                     val autoPlay = viewModel.consumePlaybackStart(podcast.id)
-                    loadDataWithBaseURL("https://www.youtube.com", learningPlayerDocument(podcast.youtubeVideoId, podcast.lastPlaybackPosition.toInt(), autoPlay), "text/html", "utf-8", null)
+                    loadDataWithBaseURL("https://${context.packageName}/", learningPlayerDocument(podcast.youtubeVideoId, podcast.lastPlaybackPosition.toInt(), autoPlay, "https://${context.packageName}/"), "text/html", "utf-8", null)
                 } },
                 update = { browser ->
                     if (playRequest == podcast.id && viewModel.consumePlaybackStart(podcast.id)) browser.evaluateJavascript("window.podTrackioPlay && window.podTrackioPlay();", null)
@@ -488,10 +487,12 @@ private fun EmbeddedYouTubePlayer(podcast: Podcast, viewModel: PodTrackioViewMod
     }
 }
 
-internal fun learningPlayerDocument(videoId: String, startSeconds: Int, autoPlay: Boolean): String {
+internal fun learningPlayerDocument(videoId: String, startSeconds: Int, autoPlay: Boolean, origin: String): String {
     require(Regex("^[A-Za-z0-9_-]{11}$").matches(videoId)) { "Invalid YouTube video ID" }
+    require(Regex("^https://[a-zA-Z0-9_.-]+/$").matches(origin)) { "Invalid player origin" }
     val start = startSeconds.coerceIn(0, 604800)
     return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
         <style>html,body,#player{width:100%;height:100%;margin:0;background:#000}</style></head><body><div id="player"></div>
         <script>
         var player, wantPlay=$autoPlay;
@@ -500,7 +501,7 @@ internal fun learningPlayerDocument(videoId: String, startSeconds: Int, autoPlay
         function report(){if(player&&player.getCurrentTime&&player.getPlayerState){
             PodTrackioLearning.progress(player.getCurrentTime(),player.getDuration(),player.getPlayerState()===1);}}
         function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:'$videoId',width:'100%',height:'100%',
-            playerVars:{start:$start,playsinline:1,origin:'https://www.youtube.com'},events:{
+            playerVars:{start:$start,playsinline:1,origin:'$origin'},events:{
             onReady:function(){if(wantPlay)player.playVideo();report();},
             onStateChange:function(e){PodTrackioLearning.state(player.getCurrentTime(),e.data===1);report();},
             onError:function(e){PodTrackioLearning.failure(e.data);}}});}

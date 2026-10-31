@@ -31,6 +31,23 @@ struct PlayKitTests {
         #expect(StreakMilestones.next(after: 14) == 30 && StreakMilestones.previous(before: 20) == 14)
     }
 
+    @Test func decorativeCuesNeverProduceSound() {
+        for cue in PlayCue.allCases where cue != .correct && cue != .success {
+            #expect(cue.sound == nil)
+        }
+        #expect(PlayCue.correct.sound == "correct")
+        #expect(PlayCue.success.sound == "complete")
+    }
+
+    @MainActor @Test func rewardReceiptUsesEarnedGemAmount() {
+        let moments = PlayMoments()
+        moments.noteWins(["Daily quest completed", "Daily chest · 10 gems · boost"])
+        #expect(moments.chestGems == 10)
+        moments.chestGems = nil
+        moments.noteWins(["Weekly goal completed"])
+        #expect(moments.chestGems == nil)
+    }
+
     /// Visual QA: `PODTRACKIO_RENDER_DIR=/path swift test --filter renderPreviews` writes PNGs of key components.
     @MainActor @Test func renderPreviews() throws {
         guard let directory = ProcessInfo.processInfo.environment["PODTRACKIO_RENDER_DIR"] else { return }
@@ -41,6 +58,10 @@ struct PlayKitTests {
                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
             try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("\(name).png"))
         }
+        let receipt = FeedbackReceipt(title: "Progress saved", detail: "Daily goal complete · 7-day streak\nAll daily quests complete · +10 gems", symbol: "checkmark.circle.fill", onDismiss: {})
+            .padding(24).frame(width: 460).background(Color.white)
+        try write("feedback-receipt", receipt)
+        try write("feedback-receipt-dark", FeedbackReceipt(title: "Session complete", detail: "24 minutes listened · +36 XP", symbol: "checkmark.circle.fill", onDismiss: {}).padding(24).frame(width: 460).background(Color.black), scheme: .dark)
         let moods = HStack(spacing: 12) { ForEach(EchoMood.allCases, id: \.self) { mood in VStack { EchoView(mood: mood, size: 120); Text(mood.rawValue) } } }
             .padding(20).background(Color.white)
         try write("echo-moods", moods)

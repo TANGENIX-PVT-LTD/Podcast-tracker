@@ -738,12 +738,12 @@ class PodTrackioViewModel(private val container: AppContainer) : ViewModel() {
         mutate { it.copy(downloads = it.downloads - podcast.youtubeVideoId) }
     }
 
-    suspend fun playbackUri(podcastId: String): String {
+    fun playbackUri(podcastId: String): String {
         val podcast = _ui.value.snapshot.podcasts.firstOrNull { it.id == podcastId } ?: error("Episode not found.")
-        _ui.value.snapshot.downloads[podcast.youtubeVideoId]?.let { record ->
-            if (File(record.filePath).exists()) return Uri.fromFile(File(record.filePath)).toString()
-        }
-        return container.mediaTools.resolve(podcast.youtubeVideoId, _ui.value.snapshot.downloadQuality).url
+        val record = _ui.value.snapshot.downloads[podcast.youtubeVideoId] ?: error("Offline copy not found.")
+        val file = File(record.filePath)
+        check(file.isFile && file.length() > 0) { "Offline copy not found. Connect to stream this episode." }
+        return Uri.fromFile(file).toString()
     }
 
     fun setDownloadQuality(quality: DownloadQuality) = mutate { it.copy(downloadQuality = quality) }

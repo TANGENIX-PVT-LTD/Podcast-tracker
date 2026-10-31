@@ -11,7 +11,7 @@ struct IOSPlayerView: View {
     @State private var inspectorMode: PlayerInspectorMode = .summary
     @State private var playbackSource: NativePlaybackSource = .stream
     @State private var listenMode = false
-    @State private var useNativePlayer = true
+    @State private var useNativePlayer = false
     @State private var playbackFailed = false
     @State private var playbackAttemptID = UUID()
     @State private var retryCount = 0
@@ -121,6 +121,7 @@ struct IOSPlayerView: View {
                     onPlayStateChange: handlePlayStateChange,
                     onError: { playbackFailed = true }
                 )
+                .id(playbackAttemptID)
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -243,7 +244,7 @@ struct IOSPlayerView: View {
         case .downloaded:
             Button("Offline", systemImage: "checkmark.circle.fill") {
                 playbackSource = .local
-                useNativePlayer = true
+                useNativePlayer = playbackSource == .local || listenMode
                 playbackFailed = false
                 playbackAttemptID = UUID()
             }
@@ -267,6 +268,7 @@ struct IOSPlayerView: View {
                     viewModel.deleteDownload(currentPodcast)
                     if playbackSource == .local {
                         playbackSource = .stream
+                        useNativePlayer = listenMode
                         playbackAttemptID = UUID()
                     }
                 }
@@ -288,10 +290,7 @@ struct IOSPlayerView: View {
                 .multilineTextAlignment(.center)
             HStack {
                 Button("Retry", systemImage: "arrow.clockwise") {
-                    playbackFailed = false
-                    useNativePlayer = true
-                    retryCount = 0
-                    playbackAttemptID = UUID()
+                    choosePlaybackSource()
                 }
                 .buttonStyle(.glassProminent)
                 Button("YouTube", systemImage: "safari") {
@@ -311,7 +310,7 @@ struct IOSPlayerView: View {
         } else {
             playbackSource = .stream
         }
-        useNativePlayer = true
+        useNativePlayer = playbackSource == .local || listenMode
         playbackFailed = false
         retryCount = 0
         playbackAttemptID = UUID()
@@ -365,7 +364,7 @@ struct IOSPlayerView: View {
     private func switchListenMode(_ enabled: Bool) {
         if playerController.isPlaying { playerController.requestPlaybackStart() }
         listenMode = enabled
-        useNativePlayer = true
+        useNativePlayer = playbackSource == .local || listenMode
         playbackFailed = false
         retryCount = 0
         playbackAttemptID = UUID()
@@ -607,13 +606,19 @@ private struct IOSSummaryView: View {
 
     private var statusCopy: String {
         switch viewModel.summaryState {
-        case .idle, .completed: "PodTrackio fetches a timestamped transcript, then Groq turns it into a source-faithful learning guide."
+        case .contactingMac: "Checking your Mac…"
+        case .waitingForMac(let detail): detail
+        case .cloudFallback: "Local generation is unavailable. Trying transcript APIs and Groq automatically…"
+        case .retryingOnDevice: "Retrying on-device · attempt 2 of 2…"
+        case .idle, .completed: "Your Mac generates the study guide when it is available. Otherwise, PodTrackio uses Groq and the episode transcript automatically."
         case .fetchingTranscript: "Fetching a timestamped transcript…"
         case .fetchingCaptions: "Looking for public captions…"
-        case .needsAudioConsent: "No captions were available. Audio transcription downloads media and uses Groq credits."
+        case .preparingLocalTranscription: "Preparing Apple speech recognition. The language model may download on first use…"
+        case .transcribingOnDevice: "Transcribing the episode on this device…"
         case .downloadingAudio(let progress): "Downloading audio… \(Int(progress * 100))%"
         case .transcribing(let current, let total): "Transcribing part \(current) of \(total)…"
-        case .synthesizing: "Finding the ideas, frameworks, examples, and actions in this episode…"
+        case .summarizingOnDevice(let current, let total): "Creating your study guide on this device · passage \(current) of \(total)…"
+        case .synthesizing: "Combining the episode’s lessons on this device…"
         case .needsTranscriptImport(let reason): "Automatic extraction failed: \(reason)"
         case .failed(let message): message
         }
@@ -622,15 +627,8 @@ private struct IOSSummaryView: View {
     @ViewBuilder
     private var controls: some View {
         switch viewModel.summaryState {
-        case .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .synthesizing:
+        case .contactingMac, .waitingForMac, .cloudFallback, .retryingOnDevice, .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .preparingLocalTranscription, .transcribingOnDevice, .summarizingOnDevice, .synthesizing:
             HStack { ProgressView(); Button("Cancel") { viewModel.cancelSummaryGeneration() }.buttonStyle(.glass) }
-        case .needsAudioConsent:
-            Button("Transcribe Audio", systemImage: "waveform") {
-                viewModel.generateSummary(for: podcast, allowAudioTranscription: true)
-            }
-            .buttonStyle(.glassProminent)
-        case .needsTranscriptImport:
-            Button("Paste Transcript", action: onPaste).buttonStyle(.glassProminent)
         default:
             Button("Generate Summary", systemImage: "sparkles") { viewModel.generateSummary(for: podcast) }
                 .buttonStyle(.glassProminent)
@@ -663,6 +661,7 @@ private struct IOSQuirkyChatView: View {
     let podcast: Podcast
     @State private var draft = ""
     @State private var isThinking = false
+    @State private var answerProgress = "Checking on-device AI…"
     @State private var errorMessage: String?
     @State private var responseTask: Task<Void, Never>?
     @AppStorage("quirky.selectedModel") private var selectedModelRaw = QuirkyModel.balanced.rawValue
@@ -679,7 +678,7 @@ private struct IOSQuirkyChatView: View {
                 QuirkyMark(size: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Quirky").font(.headline)
-                    Text("Your transcript mentor").font(.caption).foregroundStyle(.secondary)
+                    Text("On-device first").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 modelMenu
@@ -710,7 +709,7 @@ private struct IOSQuirkyChatView: View {
                 LazyVStack(spacing: 16) {
                     ForEach(messages) { message in QuirkyMessageBubble(message: message) }
                     if isThinking {
-                        HStack { QuirkyMark(size: 28); ProgressView(); Text("Thinking with \(selectedModel.title.lowercased()) reasoning…").font(.caption).foregroundStyle(.secondary); Spacer() }
+                        HStack { QuirkyMark(size: 28); ProgressView(); Text(answerProgress).font(.caption).foregroundStyle(.secondary); Spacer() }
                     }
                 }
             }
@@ -734,7 +733,7 @@ private struct IOSQuirkyChatView: View {
                 }
                 .padding(11)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                Text("Grounded in the saved transcript · \(selectedModel.title) reasoning")
+                Text("Grounded in the saved transcript · on-device first")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
@@ -751,7 +750,7 @@ private struct IOSQuirkyChatView: View {
                 }
             }
         } label: {
-            Label(selectedModel.title, systemImage: selectedModel.symbol).font(.caption.weight(.semibold))
+            Label("Fallback: \(selectedModel.title)", systemImage: selectedModel.symbol).font(.caption.weight(.semibold))
         }
         .disabled(isThinking)
     }
@@ -800,16 +799,18 @@ private struct IOSQuirkyChatView: View {
         isThinking = true
         viewModel.appendQuirkyMessage(.init(role: .user, text: question, model: nil), podcastID: podcast.id)
         responseTask = Task {
+            defer { isThinking = false }
             do {
                 let answer = try await viewModel.askTranscriptQuestion(
                     for: podcast,
                     question: question,
                     history: history,
                     model: model,
-                    answerStyle: style
+                    answerStyle: style,
+                    progress: { answerProgress = $0 }
                 )
                 guard !Task.isCancelled else { return }
-                viewModel.appendQuirkyMessage(.init(role: .quirky, text: answer, model: model, answerStyle: style), podcastID: podcast.id)
+                viewModel.appendQuirkyMessage(.init(id: answer.id, role: .quirky, text: answer.text, model: model, answerStyle: style, source: answer.source), podcastID: podcast.id)
             } catch is CancellationError {
                 return
             } catch {
@@ -854,7 +855,8 @@ private struct QuirkyMessageBubble: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text("Quirky").font(.caption.bold())
-                        if let model = message.model { Text(model.title).font(.caption2).foregroundStyle(.tertiary) }
+                        if let source = message.source { Text(source).font(.caption2).foregroundStyle(.tertiary) }
+                        else if let model = message.model { Text("Groq · \(model.title)").font(.caption2).foregroundStyle(.tertiary) }
                     }
                     Text(rendered).lineSpacing(3).frame(maxWidth: .infinity, alignment: .leading)
                 }

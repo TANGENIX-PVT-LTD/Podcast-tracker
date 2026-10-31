@@ -28,9 +28,6 @@ struct PodTrackioIOSApp: App {
                 .environmentObject(authManager)
                 .applyingAppTheme()
                 .fontDesign(.rounded)
-                #if DEBUG
-                .task { PlayDemo.installIfRequested(viewModel, auth: authManager) }
-                #endif
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

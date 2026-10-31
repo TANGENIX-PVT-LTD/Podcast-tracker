@@ -66,6 +66,9 @@ final class AppViewModel: ObservableObject {
     @Published var newlyUnlockedAchievement: Achievement?
     @Published var showAchievementPopup = false
     @Published var summaryState: SummaryGenerationState = .idle
+    private var summaryRequestID = UUID()
+    private var summaryTask: Task<Void, Never>?
+    @Published var remoteSummaryStatus: String?
     @Published var transcriptImportPresented = false
 
     private let dataManager = DataManager.shared
@@ -164,12 +167,13 @@ final class AppViewModel: ObservableObject {
         let wins = habitLoop.reconcile(activities: activities, goalMinutes: habitSettings.currentDailyGoalMinutes)
         stats.totalXP = habitLoop.legacyXP + habitLoop.rewardXP
         recomputeStreak()
-        presentLevelToastIfNeeded()
+        if celebrate { presentLevelToastIfNeeded() }
+        else { previousLevel = stats.currentLevel.number }
         if celebrate, let last = wins.last { habitMessage = last }
         if celebrate { PlayMoments.shared.noteWins(wins) }
-        if celebrate, streakProtectedToday,
+        if streakProtectedToday,
            habitLoop.insert(.init(id: "celebrated/\(habitLoop.deviceID)/\(LearningCalendar.dateKey(for: Date()))", day: LearningCalendar.dateKey(for: Date()), kind: "baseline")) {
-            showDailyCelebration = true
+            if celebrate { showDailyCelebration = true }
         }
         let today = LearningCalendar.dateKey(for: Date())
         if streakProtectedToday {
@@ -262,6 +266,9 @@ final class AppViewModel: ObservableObject {
         startDownloadCleanup()
         setupAuthObserver()
         setupNotificationRoutes()
+        #if os(macOS)
+        SummaryMacWorker.shared.start(viewModel: self)
+        #endif
     }
 
     func loadData() {
@@ -309,7 +316,7 @@ final class AppViewModel: ObservableObject {
     func saveData() {
         reconcileHabitLoop()
         saveLocalData()
-        guard AuthManager.shared.isAuthenticated, !Self.demoMode else { return }
+        guard AuthManager.shared.isAuthenticated else { return }
         let syncOwner = AuthManager.shared.userId
         let currentStats = stats
         let currentPodcasts = podcasts
@@ -362,8 +369,13 @@ final class AppViewModel: ObservableObject {
     func refreshCloudData() {
         prepareDailyLearningGoal()
         FocusModeController.shared.refresh()
-        guard AuthManager.shared.isAuthenticated, !syncInFlight, !Self.demoMode else { return }
-        Task { await syncWithSupabase() }
+        guard AuthManager.shared.isAuthenticated, !syncInFlight else { return }
+        Task {
+            await syncWithSupabase()
+            #if os(iOS)
+            resumePendingSummaryIfNeeded()
+            #endif
+        }
     }
 
     private func syncWithSupabase() async {
@@ -809,16 +821,24 @@ final class AppViewModel: ObservableObject {
         saveData()
     }
 
-    func askTranscriptQuestion(for podcast: Podcast, question: String, history: [(role: String, content: String)], model: QuirkyModel, answerStyle: QuirkyAnswerStyle) async throws -> String {
-        guard let key = KeychainStore.groqAPIKey() else { throw GroqError.missingKey }
-        guard let document = DataManager.shared.loadTranscript(for: podcast.id), !document.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw GroqError.server("Generate the summary first so PodTrackio has a transcript to chat about.")
+    func askTranscriptQuestion(for podcast: Podcast, question: String, history: [(role: String, content: String)],
+                               model: QuirkyModel, answerStyle: QuirkyAnswerStyle,
+                               progress: @escaping @MainActor (String) -> Void) async throws -> QuirkyReply {
+        let request = try QuirkyRequest(question: question, history: history, model: model, style: answerStyle)
+        let owner = AuthManager.shared.userId
+        #if os(iOS)
+        let reply: QuirkyReply
+        if OnDeviceStudyGuide.availabilityMessage == nil {
+            reply = try await QuirkyCoordinator.answer(for: podcast, request: request, progress: progress)
+        } else {
+            reply = try await QuirkyRouting.answer(for: podcast, request: request, progress: progress)
         }
-        let context = document.segments.isEmpty ? document.text : document.segments.map {
-            let total = Int($0.startSeconds); let stamp = String(format: "%d:%02d", total / 60, total % 60)
-            return "[\(stamp)] \($0.text)"
-        }.joined(separator: "\n")
-        return try await GroqClient.shared.chat(transcript: context, title: podcast.title, question: question, history: history, model: model, answerStyle: answerStyle, apiKey: key)
+        #else
+        let reply = try await QuirkyCoordinator.answer(for: podcast, request: request, progress: progress)
+        #endif
+        try Task.checkCancellation()
+        guard AuthManager.shared.userId == owner else { throw CancellationError() }
+        return reply
     }
 
     func quirkyMessages(for podcastID: UUID) -> [QuirkyChatMessage] { quirkyConversations[podcastID] ?? [] }
@@ -833,29 +853,62 @@ final class AppViewModel: ObservableObject {
         dataManager.saveQuirkyConversations(quirkyConversations)
     }
 
-    func generateSummary(for podcast: Podcast, transcript: TranscriptDocument? = nil, allowAudioTranscription: Bool = false) {
+    func generateSummary(for podcast: Podcast, transcript: TranscriptDocument? = nil) {
         guard summaryState.isIdle else { return }
-        Task { [self] in
+        // Claim the request before yielding so repeated clicks cannot start duplicate work.
+        summaryState = transcript == nil ? .fetchingTranscript : .synthesizing
+        let requestID = UUID()
+        summaryRequestID = requestID
+        summaryTask = Task { [self] in
             do {
-                let summary = try await SummaryCoordinator.shared.generate(
-                    for: podcast, importedTranscript: transcript, allowAudioTranscription: allowAudioTranscription,
-                    progress: { [weak self] state in Task { @MainActor in self?.summaryState = state } }
-                )
+                let progress: @Sendable (SummaryGenerationState) -> Void = { [weak self] state in
+                    Task { @MainActor in
+                        guard let self, self.summaryRequestID == requestID else { return }
+                        self.summaryState = state
+                    }
+                }
+                #if os(iOS)
+                let summary = try await SummaryRouting.generate(for: podcast, transcript: transcript, progress: progress)
+                #else
+                let summary = try await SummaryCoordinator.shared.generate(for: podcast, importedTranscript: transcript,
+                    progress: progress)
+                #endif
+                guard summaryRequestID == requestID else { return }
+                summaryRequestID = UUID()
                 storeSummary(summary)
                 summaryState = .completed
-            } catch SummaryPipelineError.audioConsentRequired {
-                summaryState = .needsAudioConsent
             } catch SummaryPipelineError.transcriptImportRequired(let reason) {
+                guard summaryRequestID == requestID else { return }
+                summaryRequestID = UUID()
                 summaryState = .needsTranscriptImport(reason)
             } catch is CancellationError {
+                guard summaryRequestID == requestID else { return }
+                summaryRequestID = UUID()
                 summaryState = .failed("Summary generation was cancelled. Your existing summary is unchanged.")
             } catch {
+                guard summaryRequestID == requestID else { return }
+                summaryRequestID = UUID()
                 summaryState = .failed(error.localizedDescription)
             }
         }
     }
 
-    func cancelSummaryGeneration() { SummaryCoordinator.shared.cancel(); summaryState = .idle }
+    #if os(iOS)
+    private func resumePendingSummaryIfNeeded() {
+        guard summaryState.isIdle, let owner = AuthManager.shared.userId,
+              let pending = SummaryRouting.pending(for: owner) else { return }
+        let podcast = podcasts.first { $0.id == pending.episode.id } ?? pending.episode.podcast
+        generateSummary(for: podcast)
+    }
+    #endif
+
+    func cancelSummaryGeneration() {
+        summaryRequestID = UUID()
+        summaryTask?.cancel()
+        summaryTask = nil
+        SummaryCoordinator.shared.cancel()
+        summaryState = .idle
+    }
 
     func rescheduleNotifications() {
         let plan = NotificationPlanner.plan(
@@ -1086,6 +1139,7 @@ final class AppViewModel: ObservableObject {
     }
 
     isolated deinit {
+        summaryTask?.cancel()
         saveTimer?.invalidate()
         downloadCleanupTimer?.invalidate()
         progressSyncTasks.values.forEach { $0.cancel() }
@@ -1094,6 +1148,9 @@ final class AppViewModel: ObservableObject {
 
 extension SummaryGenerationState {
     var isIdle: Bool {
-        switch self { case .idle, .completed, .failed: true; default: false }
+        switch self {
+        case .idle, .completed, .failed, .needsTranscriptImport: true
+        case .contactingMac, .waitingForMac, .cloudFallback, .retryingOnDevice, .fetchingTranscript, .fetchingCaptions, .downloadingAudio, .transcribing, .preparingLocalTranscription, .transcribingOnDevice, .summarizingOnDevice, .synthesizing: false
+        }
     }
 }

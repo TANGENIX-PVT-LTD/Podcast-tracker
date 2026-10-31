@@ -16,16 +16,9 @@ enum PlayCue: String, CaseIterable {
 
     var sound: String? {
         switch self {
-        case .press, .release, .tap, .success, .land, .thud, .impact, .swing: nil
-        case .select, .tick: "tick"
-        case .pop: "pop"
         case .correct: "correct"
-        case .wrong: "wrong"
-        case .ignite: "ignite"
-        case .streakFlip: "streak"
-        case .chestShake: "chest"
-        case .levelUp: "levelup"
-        case .freeze: "freeze"
+        case .success: "complete"
+        default: nil
         }
     }
 }
@@ -37,13 +30,16 @@ enum PlayFeedback {
 
     /// Plays the haptic and (optionally) the sound for a cue at the same instant.
     static func play(_ cue: PlayCue, sound: Bool = true, intensity: Float = 1) {
-        if hapticsEnabled { PlayHaptics.shared.play(cue, intensity: intensity) }
+        // Touch confirms intentional answers and commits, never decorative beats.
+        if hapticsEnabled, [.select, .correct, .wrong, .success].contains(cue) {
+            PlayHaptics.shared.play(cue, intensity: min(intensity, 0.45))
+        }
         if sound, soundsEnabled, let name = cue.sound { PlaySounds.shared.play(name) }
     }
 
     /// `rate` > 1 raises pitch: count-ups climb in pitch as they near the total.
     static func sound(_ name: String, rate: Float = 1, volume: Float? = nil) {
-        if soundsEnabled { PlaySounds.shared.play(name, rate: rate, volume: volume) }
+        if soundsEnabled, ["correct", "complete"].contains(name) { PlaySounds.shared.play(name, volume: volume) }
     }
 
     /// Spin up the haptic engine and audio buffers before a moment so the first beat lands on time.
@@ -189,6 +185,7 @@ final class PlayHaptics {
 final class PlaySounds {
     static let shared = PlaySounds()
     private var players: [String: [AVAudioPlayer]] = [:]
+    private var lastPlayed = Date.distantPast
 
     private init() {
         #if os(iOS)
@@ -219,10 +216,13 @@ final class PlaySounds {
     }
 
     func play(_ name: String, rate: Float = 1, volume: Float? = nil) {
+        guard ["correct", "complete"].contains(name), Date().timeIntervalSince(lastPlayed) > 0.5 else { return }
+        lastPlayed = Date()
+        players.values.flatMap { $0 }.forEach { $0.stop() }
         if players[name] == nil { load(name) }
         guard let voices = players[name], !voices.isEmpty else { return }
         let player = voices.first { !$0.isPlaying } ?? voices[0]
-        player.volume = volume ?? (name == "tick" ? 0.5 : 0.85)
+        player.volume = min(volume ?? 0.24, 0.3)
         player.rate = rate
         player.currentTime = 0
         player.play()

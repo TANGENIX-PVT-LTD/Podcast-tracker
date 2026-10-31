@@ -29,13 +29,6 @@ struct YouTubeWebView: NSViewRepresentable {
         for name in Coordinator.messageNames {
             contentController.add(context.coordinator, name: name)
         }
-        contentController.addUserScript(
-            WKUserScript(
-                source: Self.playerBridgeSource,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
-            )
-        )
         configuration.userContentController = contentController
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -43,7 +36,7 @@ struct YouTubeWebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = false
         controller.attach(webView: webView)
-        loadVideo(in: webView, videoId: videoId, start: Int(startPosition))
+        loadVideo(in: webView, videoId: videoId, start: startPosition)
         return webView
     }
 
@@ -51,7 +44,7 @@ struct YouTubeWebView: NSViewRepresentable {
         guard context.coordinator.currentVideoId != videoId else { return }
         context.coordinator.currentVideoId = videoId
         controller.attach(webView: webView)
-        loadVideo(in: webView, videoId: videoId, start: Int(startPosition))
+        loadVideo(in: webView, videoId: videoId, start: startPosition)
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -73,115 +66,43 @@ struct YouTubeWebView: NSViewRepresentable {
         )
     }
 
-    private func loadVideo(in webView: WKWebView, videoId: String, start: Int) {
-        var components = URLComponents(string: "https://www.youtube.com/embed/\(videoId)")!
-        components.queryItems = [
-            URLQueryItem(name: "enablejsapi", value: "1"),
-            URLQueryItem(name: "origin", value: "https://www.youtube.com"),
-            URLQueryItem(name: "widget_referrer", value: "https://www.youtube.com/"),
-            URLQueryItem(name: "start", value: String(max(0, start))),
-            URLQueryItem(name: "controls", value: "1"),
-            URLQueryItem(name: "rel", value: "0"),
-            URLQueryItem(name: "playsinline", value: "1"),
-            URLQueryItem(name: "iv_load_policy", value: "3"),
-            URLQueryItem(name: "fs", value: "1")
-        ]
-
-        var request = URLRequest(url: components.url!)
-        request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
-        webView.load(request)
+    private func loadVideo(in webView: WKWebView, videoId: String, start: Double) {
+        guard let html = Self.playerDocument(videoID: videoId, startPosition: start) else {
+            onError()
+            return
+        }
+        webView.loadHTMLString(html, baseURL: Self.playerOrigin)
     }
 
-    private static let playerBridgeSource = #"""
-    (function() {
-      if (window.__podTrackioBridgeInstalled) return;
-      window.__podTrackioBridgeInstalled = true;
+    static var playerOrigin: URL {
+        URL(string: "https://\((Bundle.main.bundleIdentifier ?? "com.tangenix.podtrackio").lowercased())/")!
+    }
 
-      var observedVideo = null;
-      var reportedReady = false;
-      var lastPlaying = null;
-      var reportedError = false;
-
-      function post(name, value) {
-        try {
-          var handler = window.webkit && window.webkit.messageHandlers[name];
-          if (handler) handler.postMessage(value);
-        } catch (_) {}
-      }
-
-      function reportError() {
-        if (reportedError) return;
-        reportedError = true;
-        post('playerError', 'playback-failed');
-      }
-
-      function reportState(video) {
-        if (!video) return;
-
-        if (!reportedReady && video.readyState >= 1) {
-          reportedReady = true;
-          post('playerReady', 'ready');
-        }
-
-        if (Number.isFinite(video.duration) && video.duration > 0) {
-          post('durationReady', video.duration);
-        }
-        if (Number.isFinite(video.currentTime)) {
-          post('timeUpdate', video.currentTime);
-        }
-
-        var playing = !video.paused && !video.ended;
-        if (playing !== lastPlaying) {
-          lastPlaying = playing;
-          post('playStateChange', playing ? 'playing' : 'paused');
-        }
-      }
-
-      function attachToVideo(video) {
-        if (!video || observedVideo === video) return;
-        observedVideo = video;
-        reportedReady = false;
-        lastPlaying = null;
-        video.addEventListener('loadedmetadata', function() { reportState(video); });
-        video.addEventListener('durationchange', function() { reportState(video); });
-        video.addEventListener('play', function() { reportState(video); });
-        video.addEventListener('pause', function() { reportState(video); });
-        video.addEventListener('ended', function() { reportState(video); });
-        video.addEventListener('error', reportError);
-        reportState(video);
-      }
-
-      window.podTrackioSeek = function(seconds) {
-        var video = observedVideo || document.querySelector('video');
-        if (video && Number.isFinite(seconds)) video.currentTime = Math.max(0, seconds);
-      };
-
-      window.podTrackioPlay = function() {
-        var video = observedVideo || document.querySelector('video');
-        if (video) video.play().catch(function() {});
-      };
-
-      function poll() {
-        var video = document.querySelector('video');
-        attachToVideo(video);
-        reportState(video);
-
-        if (!reportedError && document.body) {
-          var text = document.body.innerText || '';
-          if (text.indexOf('Error code:') !== -1 ||
-              text.indexOf('Video player configuration error') !== -1 ||
-              text.indexOf('This video is unavailable') !== -1 ||
-              text.indexOf('Playback on other websites has been disabled') !== -1) {
-            reportError();
-          }
-        }
-      }
-
-      setInterval(poll, 750);
-      document.addEventListener('DOMContentLoaded', poll);
-      poll();
-    })();
-    """#
+    static func playerDocument(videoID: String, startPosition: Double) -> String? {
+        guard videoID.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil else { return nil }
+        let start = startPosition.isFinite ? Int(min(604_800, max(0, startPosition))) : 0
+        return """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
+        <style>html,body,#player{width:100%;height:100%;margin:0;background:#000;overflow:hidden}</style></head>
+        <body><div id="player"></div><script>
+        var player, wantPlay=false;
+        function post(name,value){window.webkit.messageHandlers[name].postMessage(value);}
+        window.podTrackioPlay=function(){wantPlay=true;if(player&&player.playVideo)player.playVideo();};
+        window.podTrackioSeek=function(seconds){if(player&&player.seekTo)player.seekTo(seconds,true);};
+        function report(){if(player&&player.getCurrentTime&&player.getPlayerState){
+            var time=player.getCurrentTime(), duration=player.getDuration();
+            if(Number.isFinite(time))post('timeUpdate',time);
+            if(Number.isFinite(duration)&&duration>0)post('durationReady',duration);
+            post('playStateChange',player.getPlayerState()===1?'playing':'paused');}}
+        function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:'\(videoID)',width:'100%',height:'100%',
+            playerVars:{start:\(start),playsinline:1,origin:'\(playerOrigin.absoluteString)',rel:0},events:{
+            onReady:function(){post('playerReady','ready');if(wantPlay)player.playVideo();report();},
+            onStateChange:report,onError:function(e){post('playerError',String(e.data));}}});}
+        setInterval(report,1000);
+        </script><script src="https://www.youtube.com/iframe_api" onerror="post('playerError','network')"></script></body></html>
+        """
+    }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         static let messageNames = [

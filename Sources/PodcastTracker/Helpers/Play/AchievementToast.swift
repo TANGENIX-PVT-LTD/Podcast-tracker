@@ -4,42 +4,24 @@ import SwiftUI
 struct AchievementToast: View {
     @EnvironmentObject private var viewModel: AppViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var badgePop = false
-
     var body: some View {
         VStack {
             if viewModel.showAchievementPopup, let achievement = viewModel.newlyUnlockedAchievement {
-                HStack(spacing: 12) {
-                    Image(systemName: achievement.iconName).font(.system(size: 20, weight: .black)).foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Circle().fill(Play.Palette.gold.gradient))
-                        .overlay(Circle().strokeBorder(.white.opacity(0.6), lineWidth: 3).padding(3))
-                        .scaleEffect(badgePop ? 1 : 0.3)
-                        .rotationEffect(.degrees(badgePop ? 0 : -40))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("ACHIEVEMENT UNLOCKED").font(Play.rounded(11, .heavy)).tracking(0.6).foregroundStyle(Play.Palette.goldLip)
-                        Text(achievement.title).font(Play.rounded(16, .heavy))
-                    }
-                    Spacer(minLength: 0)
+                FeedbackReceipt(title: "Achievement unlocked: \(achievement.title)",
+                                detail: achievement.description, symbol: achievement.iconName) {
+                    viewModel.showAchievementPopup = false
                 }
-                .padding(12)
-                .frame(maxWidth: 380)
-                .chunkyCard(cornerRadius: 18, border: Play.Palette.gold)
-                .padding(.horizontal, 16)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .accessibilityElement(children: .combine)
+                .padding(16)
+                .transition(.opacity)
                 .task(id: achievement.id) {
-                    badgePop = false
-                    PlayFeedback.play(.success, sound: false); PlayFeedback.sound("pop")
-                    withAnimation(Play.Motion.or(Play.Motion.bouncy.delay(0.15), reduceMotion: reduceMotion)) { badgePop = true }
-                    try? await Task.sleep(for: .seconds(3.2))
-                    withAnimation(Play.Motion.gentle) { viewModel.showAchievementPopup = false }
+                    do { try await Task.sleep(for: .seconds(6)) } catch { return }
+                    guard viewModel.newlyUnlockedAchievement?.id == achievement.id else { return }
+                    viewModel.showAchievementPopup = false
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.top, 8)
-        .animation(Play.Motion.or(Play.Motion.bouncy, reduceMotion: reduceMotion), value: viewModel.showAchievementPopup)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.22), value: viewModel.showAchievementPopup)
     }
 }
 

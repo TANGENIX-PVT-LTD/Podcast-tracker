@@ -11,7 +11,7 @@ smaller screens.
 
 ## Versions
 
-**3.0** is the current app: a full redesign with streaks, quests, Echo the mascot, beat-synced haptics and a rebuilt Brain. **2.0 (Classic)** stays downloadable for anyone who prefers the original design: check out tag `v2.0.0` or branch `release/2.x`, or grab its builds from GitHub Releases. See [CHANGELOG.md](CHANGELOG.md) for what changed and how to run both.
+**3.0.1** is the current app: a full redesign with streaks, quests, Echo the mascot, beat-synced haptics and a rebuilt Brain. **2.0 (Classic)** stays downloadable for anyone who prefers the original design: check out tag `v2.0.0` or branch `release/2.x`, or grab its builds from GitHub Releases. See [CHANGELOG.md](CHANGELOG.md) for what changed and how to run both.
 
 ## Repository layout
 
@@ -37,7 +37,7 @@ Feature availability varies by platform and distribution flavor. See
 ## Get the code
 
 ```bash
-git clone https://github.com/tanmaybawakar/Podcast-tracker.git
+git clone https://github.com/TANGENIX-PVT-LTD/Podcast-tracker.git
 cd Podcast-tracker
 ```
 
@@ -45,10 +45,12 @@ cd Podcast-tracker
 
 ### Install
 
-Download [PodTrackio.dmg](PodTrackio.dmg), open it, and drag **PodTrackio** to
-**Applications**. This existing installer is ad-hoc signed; use Finder's
-Control-click → **Open** if Gatekeeper requires it. It is not a notarized release
-of every platform or necessarily the newest source revision.
+Download the current macOS installer or Android APKs from [the latest release](https://github.com/TANGENIX-PVT-LTD/Podcast-tracker/releases/latest).
+Older versions remain available on [GitHub Releases](https://github.com/TANGENIX-PVT-LTD/Podcast-tracker/releases), including [Classic 2.0](https://github.com/TANGENIX-PVT-LTD/Podcast-tracker/releases/tag/v2.0.0).
+
+Open the macOS DMG and drag **PodTrackio** to **Applications**. Downloads are
+ad-hoc signed and not notarized; macOS may require approval in Privacy & Security.
+Android APKs are debug-signed builds for sideloading. iOS is available as source.
 
 ### Build and test
 
@@ -118,9 +120,27 @@ The flavor names do not guarantee approval by an app store.
 
 ## AI keys and backend setup
 
-Add your own **Groq** and **TranscriptAPI** keys in each app's Settings. Apple
-apps use Keychain; Android encrypts stored credentials with Android Keystore.
+On Mac, **Generate Summary** runs Apple speech recognition and Apple Intelligence
+locally, retries once on failure, then falls back to transcript APIs and Groq.
+There is no separate transcription step. Successful local generation needs no
+API keys. For cloud features, add your own **Groq** and **TranscriptAPI**
+keys in each app's Settings. Apple apps use Keychain; Android encrypts stored credentials with Android Keystore.
 You can paste/import a transcript when automatic retrieval is unavailable.
+
+iPhone summary requests automatically use an awake Mac running PodTrackio,
+signed into the same account, with Apple Intelligence available. The Mac
+generates the guide locally and publishes it through Supabase to the phone.
+If the Mac is unavailable, busy, or loses its connection, the phone uses Groq
+with TranscriptAPI/YouTube captions (and audio transcription when needed).
+Cloud fallback requires keys in the iPhone's Settings and provider connectivity;
+keys stay in each device's Keychain. Keep the iPhone app open during cloud generation.
+
+Quirky chat follows the same automatic routing: Apple Intelligence on a supported
+Apple device, or an available Mac for iPhones without Apple Intelligence. It retries
+locally once, then uses Groq. Replies identify the engine used. The Mac must be awake,
+open, signed into the same account, and not already busy. Chat questions, bounded
+conversation context, and any relayed transcript use the same owner-only Supabase
+request queue; API keys stay in device Keychain.
 
 For an independent backend:
 
@@ -143,7 +163,7 @@ never test writes against someone else's project.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, platform checks, and pull
-requests. Report ordinary bugs through [GitHub issues](https://github.com/tanmaybawakar/Podcast-tracker/issues),
+requests. Report ordinary bugs through [GitHub issues](https://github.com/TANGENIX-PVT-LTD/Podcast-tracker/issues),
 including platform/version and reproduction steps without private data.
 
 ## Privacy and security

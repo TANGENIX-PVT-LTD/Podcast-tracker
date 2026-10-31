@@ -280,9 +280,6 @@ struct IOSSettingsView: View {
                     Toggle("Celebration sounds", isOn: $viewModel.habitLoop.soundsEnabled)
                     Toggle("Haptics", isOn: $viewModel.habitLoop.hapticsEnabled)
                 }
-                #if DEBUG
-                PreviewMomentsSection()
-                #endif
                 Section {
                     LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                     Text("Raw transcripts, downloaded media, and API keys stay on this device. Learning data and compact summaries sync through Supabase.")

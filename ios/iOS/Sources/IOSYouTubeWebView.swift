@@ -34,9 +34,6 @@ struct IOSYouTubeWebView: UIViewRepresentable {
         for name in Coordinator.messageNames {
             configuration.userContentController.add(context.coordinator, name: name)
         }
-        configuration.userContentController.addUserScript(
-            WKUserScript(source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-        )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false
         webView.backgroundColor = .black
@@ -63,54 +60,42 @@ struct IOSYouTubeWebView: UIViewRepresentable {
     }
 
     private func load(in webView: WKWebView) {
-        var components = URLComponents(string: "https://www.youtube.com/embed/\(videoID)")!
-        components.queryItems = [
-            .init(name: "enablejsapi", value: "1"),
-            .init(name: "origin", value: "https://www.youtube.com"),
-            .init(name: "start", value: String(max(0, Int(startPosition)))),
-            .init(name: "controls", value: "1"),
-            .init(name: "playsinline", value: "1"),
-            .init(name: "rel", value: "0"),
-            .init(name: "fs", value: "1")
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
-        webView.load(request)
+        guard let html = Self.playerDocument(videoID: videoID, startPosition: startPosition) else {
+            onError()
+            return
+        }
+        webView.loadHTMLString(html, baseURL: Self.playerOrigin)
     }
 
-    private static let bridgeScript = #"""
-    (function() {
-      if (window.__podTrackioBridgeInstalled) return;
-      window.__podTrackioBridgeInstalled = true;
-      var observedVideo = null, reportedReady = false, lastPlaying = null, reportedError = false;
-      function post(name, value) {
-        try { var h = window.webkit && window.webkit.messageHandlers[name]; if (h) h.postMessage(value); } catch (_) {}
-      }
-      function reportError() { if (!reportedError) { reportedError = true; post('playerError', 'failed'); } }
-      function report(video) {
-        if (!video) return;
-        if (!reportedReady && video.readyState >= 1) { reportedReady = true; post('playerReady', 'ready'); }
-        if (Number.isFinite(video.duration) && video.duration > 0) post('durationReady', video.duration);
-        if (Number.isFinite(video.currentTime)) post('timeUpdate', video.currentTime);
-        var playing = !video.paused && !video.ended;
-        if (playing !== lastPlaying) { lastPlaying = playing; post('playStateChange', playing ? 'playing' : 'paused'); }
-      }
-      function attach(video) {
-        if (!video || observedVideo === video) return;
-        observedVideo = video; reportedReady = false; lastPlaying = null;
-        ['loadedmetadata','durationchange','play','pause','ended'].forEach(function(e) { video.addEventListener(e, function() { report(video); }); });
-        video.addEventListener('error', reportError); report(video);
-      }
-      window.podTrackioSeek = function(seconds) { var v = observedVideo || document.querySelector('video'); if (v && Number.isFinite(seconds)) v.currentTime = Math.max(0, seconds); };
-      window.podTrackioPlay = function() { var v = observedVideo || document.querySelector('video'); if (v) v.play().catch(function() {}); };
-      function poll() {
-        var v = document.querySelector('video'); attach(v); report(v);
-        var text = document.body ? (document.body.innerText || '') : '';
-        if (text.indexOf('Error code:') !== -1 || text.indexOf('This video is unavailable') !== -1 || text.indexOf('Playback on other websites has been disabled') !== -1) reportError();
-      }
-      setInterval(poll, 750); document.addEventListener('DOMContentLoaded', poll); poll();
-    })();
-    """#
+    static var playerOrigin: URL {
+        URL(string: "https://\((Bundle.main.bundleIdentifier ?? "com.tangenix.podtrackio").lowercased())/")!
+    }
+
+    static func playerDocument(videoID: String, startPosition: Double) -> String? {
+        guard videoID.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil else { return nil }
+        let start = startPosition.isFinite ? Int(min(604_800, max(0, startPosition))) : 0
+        return """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <meta name="referrer" content="strict-origin-when-cross-origin">
+        <style>html,body,#player{width:100%;height:100%;margin:0;background:#000;overflow:hidden}</style></head>
+        <body><div id="player"></div><script>
+        var player, wantPlay=false;
+        function post(name,value){window.webkit.messageHandlers[name].postMessage(value);}
+        window.podTrackioPlay=function(){wantPlay=true;if(player&&player.playVideo)player.playVideo();};
+        window.podTrackioSeek=function(seconds){if(player&&player.seekTo)player.seekTo(seconds,true);};
+        function report(){if(player&&player.getCurrentTime&&player.getPlayerState){
+            var time=player.getCurrentTime(), duration=player.getDuration();
+            if(Number.isFinite(time))post('timeUpdate',time);
+            if(Number.isFinite(duration)&&duration>0)post('durationReady',duration);
+            post('playStateChange',player.getPlayerState()===1?'playing':'paused');}}
+        function onYouTubeIframeAPIReady(){player=new YT.Player('player',{videoId:'\(videoID)',width:'100%',height:'100%',
+            playerVars:{start:\(start),playsinline:1,origin:'\(playerOrigin.absoluteString)',rel:0},events:{
+            onReady:function(){post('playerReady','ready');if(wantPlay)player.playVideo();report();},
+            onStateChange:report,onError:function(e){post('playerError',String(e.data));}}});}
+        setInterval(report,1000);
+        </script><script src="https://www.youtube.com/iframe_api" onerror="post('playerError','network')"></script></body></html>
+        """
+    }
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         static let messageNames = ["timeUpdate", "durationReady", "playStateChange", "playerReady", "playerError"]

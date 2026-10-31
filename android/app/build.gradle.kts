@@ -24,8 +24,8 @@ android {
         applicationId = "com.tangenix.podtrackio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 300
-        versionName = "3.0.0"
+        versionCode = 301
+        versionName = "3.0.1"
 
         buildConfigField("String", "SUPABASE_URL", "\"${localValue("PODTRACKIO_SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${localValue("PODTRACKIO_SUPABASE_ANON_KEY")}\"")

@@ -395,6 +395,19 @@ struct FocusCommitmentTests {
 
 @Suite("AI and sync contracts")
 struct ContractTests {
+    @Test func summaryCanResumeAfterRequestingTranscriptImport() {
+        #expect(SummaryGenerationState.needsTranscriptImport("Captions unavailable").isIdle)
+    }
+
+    @Test func summaryRejectsDuplicateRequestsOnlyWhileWorkIsRunning() {
+        let active: [SummaryGenerationState] = [.fetchingTranscript, .fetchingCaptions,
+            .downloadingAudio(progress: 0), .transcribing(current: 1, total: 2), .synthesizing]
+        for state in active { #expect(!state.isIdle) }
+        for state in [SummaryGenerationState.idle, .completed, .failed("Try again")] {
+            #expect(state.isIdle)
+        }
+    }
+
     @Test func strictSummaryPayloadDecodes() throws {
         let data = #"{"brief":"Brief","keyTopics":[{"title":"Topic","explanation":"Why","timestampSeconds":12}],"majorTakeaways":[{"title":"Takeaway","explanation":"Because"}],"actionPlan":[{"title":"Do it","detail":"Today"}]}"#.data(using: .utf8)!
         let value = try JSONDecoder().decode(GroqSummaryPayload.self, from: data)

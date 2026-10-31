@@ -19,7 +19,11 @@ DMG_PATH="$ROOT_DIR/$APP_NAME.dmg"
 DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 # Ad-hoc by default; set e.g. PODTRACKIO_SIGN_IDENTITY="Apple Development: you@example.com" for a stable
 # signature, which keeps Keychain items readable across rebuilds without prompts.
-SIGN_IDENTITY="${PODTRACKIO_SIGN_IDENTITY:--}"
+SIGN_IDENTITY="${PODTRACKIO_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" && -d "$APP_BUNDLE" ]]; then
+  SIGN_IDENTITY="$(codesign -dv --verbose=4 "$APP_BUNDLE" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)"
+fi
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 export DEVELOPER_DIR
 export CLANG_MODULE_CACHE_PATH="$SCRATCH_DIR/clang-module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$SCRATCH_DIR/swiftpm-module-cache"

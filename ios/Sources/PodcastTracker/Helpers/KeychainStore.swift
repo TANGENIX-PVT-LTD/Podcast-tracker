@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = AppViewModel.demoMode ? "com.tangenix.podtrackio.demo" : "com.tangenix.podtrackio"
+    private static let service = "com.tangenix.podtrackio"
     private static let groqAccount = "groq-api-key"
     private static let transcriptAPIAccount = "transcriptapi-api-key"
     private static let authAccessTokenAccount = "supabase-access-token"

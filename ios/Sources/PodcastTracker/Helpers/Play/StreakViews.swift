@@ -96,8 +96,8 @@ struct WeekStripView: View {
                 .rotationEffect(.degrees(8))
         case .today:
             // Time-driven pulse: repeatForever animations leak into parent transitions.
-            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
-                let pulse = reduceMotion ? 0 : sin(context.date.timeIntervalSinceReferenceDate * 3.5)
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: true)) { context in
+                let pulse: Double = 0
                 Circle().strokeBorder(Play.Palette.flame, style: StrokeStyle(lineWidth: 3, dash: [5, 4]))
                     .scaleEffect(1 + 0.07 * pulse)
             }
@@ -136,11 +136,11 @@ struct StreakHero: View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .center, spacing: 14) {
-                    TimelineView(.animation(minimumInterval: 1 / 30, paused: !risk || reduceMotion)) { context in
+                    TimelineView(.animation(minimumInterval: 1 / 30, paused: true)) { context in
                         StreakFlame(state: viewModel.flameState, size: 66)
-                            .scaleEffect(risk && !reduceMotion ? 1 + 0.05 * sin(context.date.timeIntervalSinceReferenceDate * 4.5) : 1)
+
                     }
-                    .hop(flameHop, height: 12)
+
                     VStack(alignment: .leading, spacing: 0) {
                         RollingNumber(value: introCount ?? count, font: Play.rounded(42, .black), digitHeight: 46,
                                       color: viewModel.flameState == .ash ? Play.Palette.ash : Play.Palette.flame)
@@ -180,16 +180,7 @@ struct StreakHero: View {
         }
         .buttonStyle(ChunkyTileStyle(selected: risk, tint: risk ? Play.Palette.error : nil, cornerRadius: 22))
         .accessibilityLabel("\(count)-day streak. \(statusLine). Open streak details.")
-        .task {
-            guard !Self.introPlayed, !reduceMotion, count > 0 else { return }
-            Self.introPlayed = true
-            introCount = 0
-            await Choreo.run([
-                .at(0.35, .land, sound: false) { introCount = nil },
-                .at(0.62, .pop, sound: false, intensity: 0.7) { flameHop += 1 }
-            ])
-        }
-        .onChange(of: count) { old, new in if new > old { flameHop += 1 } }
+
     }
 
     private var statusLine: String {

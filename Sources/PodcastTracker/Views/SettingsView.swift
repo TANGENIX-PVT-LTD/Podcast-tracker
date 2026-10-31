@@ -255,9 +255,6 @@ private struct HabitSettingsView: View {
                 Toggle("Celebration sounds", isOn: $viewModel.habitLoop.soundsEnabled)
                 Toggle("Trackpad haptics", isOn: $viewModel.habitLoop.hapticsEnabled)
             }
-            #if DEBUG
-            PreviewMomentsSection()
-            #endif
             Section {
                 Toggle("Keep Rescue ready after login", isOn: Binding(
                     get: { launchAtLogin.isRequested },

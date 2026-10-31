@@ -14,11 +14,7 @@ struct PlayQuizView: View {
     @State private var checked = false
     @State private var correctCount = 0
     @State private var combo = 0
-    @State private var shake: CGFloat = 0
     @State private var finished = false
-    @State private var sparks = 0
-    @State private var tilePop = 0
-    @State private var echoHop = 0
 
     private var question: RecallQuestion? { questions.indices.contains(index) ? questions[index] : nil }
     private var isCorrect: Bool { selected == question?.answer }
@@ -44,19 +40,19 @@ struct PlayQuizView: View {
                         Image(systemName: "flame.fill").foregroundStyle(Play.Palette.flame.gradient)
                         Text("\(combo)").font(Play.rounded(16, .black)).foregroundStyle(Play.Palette.flame)
                     }
-                    .slam(combo, from: 1.8)
+
                     .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding(.horizontal, 20).padding(.top, 16)
-            .animation(Play.Motion.bouncy, value: combo)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: combo)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text(title.uppercased()).font(Play.rounded(13, .heavy)).tracking(0.8).foregroundStyle(Play.themeTint)
                     HStack(alignment: .top, spacing: 10) {
                         EchoView(mood: checked ? (isCorrect ? .cheer : .worried) : .thinking, size: 74)
-                            .hop(echoHop, height: 16)
+
                         Text(question.question).font(Play.rounded(21, .heavy)).fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 8)
                     }
@@ -78,25 +74,17 @@ struct PlayQuizView: View {
                                 .padding(14).frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .buttonStyle(ChunkyTileStyle(selected: tileSelected(choiceIndex, question), tint: tileTint(choiceIndex, question), cornerRadius: 16))
-                            .slam(choiceIndex == question.answer ? tilePop : 0, from: 1.1)
-                            .overlay {
-                                if choiceIndex == question.answer {
-                                    ParticleBurst(style: .sparks, trigger: tilePop, count: 16, colors: [Play.Palette.success, Play.Palette.gold, .white])
-                                        .frame(width: 260, height: 160)
-                                }
-                            }
                             .keyboardShortcut(KeyEquivalent(Character("\(choiceIndex + 1)")), modifiers: [])
                             .disabled(checked)
                         }
                     }
-                    .offset(x: shake)
                 }
                 .padding(20)
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
 
-            if checked { feedbackSheet(question).transition(.move(edge: .bottom)) }
+            if checked { feedbackSheet(question).transition(.opacity) }
             else {
                 Button("Check", action: check)
                     .buttonStyle(.chunky(.success))
@@ -141,32 +129,19 @@ struct PlayQuizView: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(scheme == .dark ? 0.18 : 0.14).ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) { ParticleBurst(style: .sparks, trigger: sparks, count: 18, colors: [Play.Palette.success, Play.Palette.gold]).frame(height: 160).offset(y: -60) }
         .accessibilityElement(children: .contain)
     }
 
     private func check() {
-        guard let selected, let question else { return }
+        guard !checked, let selected, let question else { return }
+        checked = true
         if selected == question.answer {
-            correctCount += 1; combo += 1
-            Task {
-                await Choreo.run([
-                    .at(0, .correct) { checked = true; tilePop += 1; echoHop += 1 },
-                    .at(0.12, nil) { sparks += 1 },
-                    .at(0.3, combo >= 2 ? .pop : nil, sound: combo >= 3) {}
-                ], reduceMotion: reduceMotion)
-            }
+            correctCount += 1
+            combo += 1
+            PlayFeedback.play(.correct)
         } else {
             combo = 0
-            // Each swing of the shake lands its own haptic, decaying with the motion.
-            let swings: [(Double, CGFloat, Float)] = [(0, -14, 1), (0.07, 12, 0.85), (0.14, -9, 0.7), (0.21, 6, 0.5), (0.28, -3, 0.3), (0.35, 0, 0)]
-            var beats: [Beat] = [.at(0, .wrong) { checked = true }]
-            for (time, offset, power) in swings {
-                beats.append(.at(time, power > 0 ? .swing : nil, sound: false, intensity: power) {
-                    withAnimation(.easeOut(duration: 0.06)) { shake = offset }
-                })
-            }
-            Task { await Choreo.run(beats, reduceMotion: reduceMotion) }
+            PlayFeedback.play(.wrong, sound: false)
         }
     }
 
@@ -189,7 +164,6 @@ struct PlayQuizView: View {
                     VStack { CountUpText(value: correctCount, font: Play.rounded(40, .black), suffix: "/\(questions.count)").foregroundStyle(Play.Palette.gold); Text("CORRECT").font(Play.rounded(12, .heavy)).foregroundStyle(.secondary) }
                 }
             }
-            .overlay { ParticleBurst(style: .confetti, trigger: accuracy >= 66 ? 1 : 0, count: 70).offset(y: -60) }
         }
         .task { PlayFeedback.sound("complete"); PlayFeedback.play(.success, sound: false) }
     }

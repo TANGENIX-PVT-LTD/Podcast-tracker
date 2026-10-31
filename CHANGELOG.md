@@ -4,15 +4,25 @@ PodTrackio keeps every major version downloadable. 3.0 is a ground-up redesign, 
 
 | Version | Git tag | Source branch | Status |
 |---|---|---|---|
-| **3.0.0** | `v3.0.0` | `main` | Current |
+| **3.0.1** | `v3.0.1` | `main` | Current |
+| **3.0.0** | `v3.0.0` | Tag | Previous redesign |
 | **2.0.0** | `v2.0.0` | `release/2.x` | Classic, maintained for downloads only |
 
 Downloads for both live on the GitHub Releases page: the macOS app (`.dmg`) and Android APKs. The iOS app builds from source with Xcode for either tag.
 
 ### Running the classic version
 - **macOS:** install `PodTrackio 2.0.app` next to `PodTrackio.app`. Both read the same local library, so **run one at a time**.
-- **Android:** 2.0 and 3.0 use the same package name. Installing 2.0 over 3.0 is a downgrade, so uninstall 3.0 first. Your library comes back from cloud sync after you sign in.
+- **Android:** 2.0 and 3.0 use the same package name. Installing 2.0 over 3.0 is a downgrade, so uninstall 3.0 first. Uninstalling deletes local-only data and settings. Verify your cloud library and export anything local before switching; cloud-synced items can be restored after signing in.
 - **iOS:** `git checkout v2.0.0`, open `ios/PodTrackio.xcodeproj` and run it on your device.
+
+## 3.0.1
+
+- Local-first Apple summaries and Quirky chat, with one local retry and cloud fallback.
+- Same-account Mac routing for iPhones without Apple Intelligence, with owner-scoped Supabase queues.
+- Streaming playback fixes and updated player controls across platforms.
+- Refined Play feedback, sounds, and animations.
+
+Independent backends must apply the included summary and Quirky routing migrations.
 
 ## 3.0.0: "Play"
 

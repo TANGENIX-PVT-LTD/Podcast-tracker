@@ -26,7 +26,7 @@ final class DataManager: @unchecked Sendable {
     private var appSupportURL: URL {
         let urls = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         // Demo mode (debug QA) gets its own folder so sample data can never touch a real library.
-        let appSupport = urls[0].appendingPathComponent(AppViewModel.demoMode ? "PodcastTracker-Demo" : "PodcastTracker", isDirectory: true)
+        let appSupport = urls[0].appendingPathComponent("PodcastTracker", isDirectory: true)
         if !fileManager.fileExists(atPath: appSupport.path) {
             try? fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
         }

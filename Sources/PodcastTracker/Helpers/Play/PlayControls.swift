@@ -94,7 +94,7 @@ private struct ChunkyButtonBody: View {
             .padding(.bottom, depth)
             .contentShape(Rectangle())
             // Press is instant and firm; release springs back up past rest, like a real key.
-            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.06) : .spring(response: 0.32, dampingFraction: 0.45)), value: pressed)
+            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.06) : .smooth(duration: 0.18, extraBounce: 0)), value: pressed)
             .onChange(of: configuration.isPressed) { _, isPressed in
                 guard enabled else { return }
                 PlayFeedback.play(isPressed ? .press : .release, sound: false)
@@ -147,7 +147,7 @@ private struct ChunkyTileBody: View {
             .background { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(lip).offset(y: 4) }
             .padding(.bottom, 4)
             .contentShape(Rectangle())
-            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.06) : .spring(response: 0.32, dampingFraction: 0.5)), value: pressed)
+            .animation(reduceMotion ? nil : (pressed ? .easeOut(duration: 0.06) : .smooth(duration: 0.18, extraBounce: 0)), value: pressed)
             .animation(reduceMotion ? nil : Play.Motion.snappy, value: selected)
             .onChange(of: configuration.isPressed) { _, isPressed in if isPressed { PlayFeedback.play(.tap, sound: false) } }
     }
@@ -163,54 +163,21 @@ struct PlayProgressBar: View {
     var showsGlow = true
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown: Double = 0
-    @State private var shine: CGFloat = -0.3
-    @State private var bulge = 0
-
     var body: some View {
         GeometryReader { proxy in
-            let width = proxy.size.width
-            let fill = max(shown > 0 ? height : 0, width * min(1, max(0, shown)))
             ZStack(alignment: .leading) {
-                Capsule().fill(scheme == .dark ? Color.white.opacity(0.10) : Color(hex: 0xE5E5E5))
-                Capsule().fill(tint.gradient)
-                    .frame(width: fill)
-                    .overlay(alignment: .top) {
-                        Capsule().fill(.white.opacity(0.3)).frame(height: max(2, height * 0.22))
-                            .padding(.horizontal, height * 0.45).padding(.top, height * 0.2)
-                    }
-                    .overlay {
-                        LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: max(24, fill * 0.35))
-                            .offset(x: (shine - 0.5) * fill)
-                            .blendMode(.plusLighter)
-                    }
-                    .clipShape(Capsule())
-                    .shadow(color: showsGlow && shown > 0 ? tint.opacity(0.45) : .clear, radius: 6)
-                    .keyframeAnimator(initialValue: CGFloat(1), trigger: bulge) { content, y in
-                        content.scaleEffect(x: 1, y: y, anchor: .center)
-                    } keyframes: { _ in
-                        KeyframeTrack { CubicKeyframe(1.35, duration: 0.1); SpringKeyframe(1, duration: 0.35, spring: .bouncy) }
-                    }
-                ParticleBurst(style: .sparks, trigger: bulge, count: 10, colors: [.white, tint])
-                    .frame(width: height * 4, height: height * 4)
-                    .position(x: fill, y: height / 2)
+                Capsule().fill(.primary.opacity(0.08))
+                Capsule().fill(tint)
+                    .frame(width: proxy.size.width)
+                    .scaleEffect(x: min(1, max(0, value)), y: 1, anchor: .leading)
             }
+            .clipShape(Capsule())
         }
         .frame(height: height)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.25, extraBounce: 0), value: value)
         .accessibilityElement()
         .accessibilityLabel("Progress")
         .accessibilityValue("\(Int(min(1, max(0, value)) * 100)) percent")
-        .onAppear {
-            withAnimation(Play.Motion.or(.spring(response: 0.7, dampingFraction: 0.8), reduceMotion: reduceMotion).delay(0.15)) { shown = value }
-        }
-        .onChange(of: value) { old, new in
-            withAnimation(Play.Motion.or(.spring(response: 0.55, dampingFraction: 0.7), reduceMotion: reduceMotion)) { shown = new }
-            guard new > old, !reduceMotion else { return }
-            bulge += 1
-            shine = -0.3
-            withAnimation(.easeInOut(duration: 0.7).delay(0.1)) { shine = 1.3 }
-        }
     }
 }
 
@@ -233,7 +200,7 @@ struct PlayRing<Center: View>: View {
                 .shadow(color: tint.opacity(0.35), radius: 4)
             center
         }
-        .onAppear { withAnimation(Play.Motion.or(.spring(response: 0.8, dampingFraction: 0.8), reduceMotion: reduceMotion)) { shown = value } }
+        .onAppear { shown = value }
         .onChange(of: value) { _, new in withAnimation(Play.Motion.or(Play.Motion.bouncy, reduceMotion: reduceMotion)) { shown = new } }
     }
 }
@@ -250,31 +217,12 @@ struct CountUpText: View {
     var suffix = ""
     var ticks = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown: Int?
-
     var body: some View {
-        Text("\(prefix)\(shown ?? from)\(suffix)")
+        Text("\(prefix)\(value)\(suffix)")
             .font(font).monospacedDigit()
-            .contentTransition(.numericText(value: Double(shown ?? from)))
-            .slam(shown == value && value != from ? 1 : 0, from: 1.25)
+            .contentTransition(.numericText(value: Double(value)))
+            .animation(reduceMotion ? nil : .smooth(duration: 0.22, extraBounce: 0), value: value)
             .accessibilityLabel("\(prefix)\(value)\(suffix)")
-            .task(id: value) {
-                guard !reduceMotion, value != from else { shown = value; return }
-                let steps = min(abs(value - from), 24)
-                let start = shown ?? from
-                for step in 1...max(1, steps) {
-                    let progress = Double(step) / Double(max(1, steps))
-                    let eased = 1 - pow(1 - progress, 3)
-                    withAnimation(.snappy(duration: 0.12)) { shown = start + Int((Double(value - start) * eased).rounded()) }
-                    if ticks && (step % 2 == 0 || step == steps) {
-                        PlayFeedback.play(.tick, sound: false, intensity: 0.5 + Float(progress) * 0.5)
-                        PlayFeedback.sound("tick", rate: 0.9 + Float(progress) * 0.6, volume: 0.35)
-                    }
-                    try? await Task.sleep(for: .seconds(duration / Double(max(1, steps)) * (0.6 + progress)))
-                    if Task.isCancelled { return }
-                }
-                shown = value
-            }
     }
 }
 

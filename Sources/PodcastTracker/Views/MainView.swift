@@ -13,9 +13,6 @@ struct MainView: View {
             }
         }
         .onOpenURL { authManager.handleCallback(url: $0) }
-        #if DEBUG
-        .task { PlayDemo.installIfRequested(viewModel, auth: authManager) }
-        #endif
         .applyingAppTheme()
     }
 
@@ -31,6 +28,10 @@ struct MainView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .safeAreaInset(edge: .bottom) {
+                if let status = viewModel.remoteSummaryStatus {
+                    Label(status, systemImage: "iphone.and.arrow.forward")
+                        .font(.caption).foregroundStyle(.secondary).padding(10)
+                }
                 if viewModel.isTracking, let podcast = viewModel.selectedPodcast {
                     ActiveSessionView(podcast: podcast)
                         .environmentObject(viewModel)

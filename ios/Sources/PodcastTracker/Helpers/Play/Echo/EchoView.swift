@@ -9,8 +9,8 @@ struct EchoView: View {
     @Environment(\.self) private var environment
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 60, paused: reduceMotion)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+        TimelineView(.animation(paused: true)) { _ in
+            let t: Double = 0
             Canvas { gc, canvasSize in
                 draw(in: &gc, size: canvasSize, t: t)
             }

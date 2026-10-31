@@ -71,6 +71,7 @@ enum TranscriptSource: String, Codable, Sendable {
     case transcriptAPI
     case captions
     case groqWhisper
+    case appleSpeech
     case imported
     case pasted
 }
